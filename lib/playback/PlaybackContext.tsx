@@ -7,6 +7,11 @@ import { RecommendationEngine } from '@/lib/recommendations/engine';
 import { MusicProviderService } from '@/lib/music/provider';
 import { SEED_TRACKS } from '@/lib/music/seed';
 
+export interface PlayOptions {
+  isSearchPlay?: boolean;
+  generateTasteQueue?: boolean;
+}
+
 interface PlaybackContextType {
   currentTrack: Track | null;
   isPlaying: boolean;
@@ -22,7 +27,7 @@ interface PlaybackContextType {
   error: string | null;
   isFullScreenOpen: boolean;
   isQueueOpen: boolean;
-  playTrack: (track: Track, customQueue?: Track[]) => void;
+  playTrack: (track: Track, customQueue?: Track[], options?: PlayOptions) => void;
   togglePlay: () => void;
   pause: () => void;
   resume: () => void;
@@ -238,7 +243,7 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
     audio.onended = handleTrackEnded;
   }, [handleTrackEnded]);
 
-  const playTrack = useCallback((track: Track, customQueue?: Track[]) => {
+  const playTrack = useCallback((track: Track, customQueue?: Track[], options?: PlayOptions) => {
     finalizeCurrentPlaySession(false);
     setError(null);
     setCurrentTrack(track);
@@ -246,8 +251,38 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
     setDuration(track.duration || 0);
     setIsLoading(true);
 
-    if (customQueue) {
+    if (customQueue && !options?.isSearchPlay) {
       setQueue(customQueue);
+    } else {
+      // Search play or standalone track play:
+      // Clear any keyword search queue immediately so the Next button plays taste recommendations
+      setQueue([]);
+
+      // Asynchronously generate a tailored taste queue based on user preferences and this song
+      (async () => {
+        try {
+          const trending = await MusicProviderService.getTrending(35);
+          const pool = trending.length > 0 ? trending : SEED_TRACKS;
+          const tasteQueue = RecommendationEngine.generateRecommendationQueue(
+            pool,
+            preferences,
+            track,
+            12,
+            [track.id]
+          );
+          setQueue(tasteQueue);
+        } catch (err) {
+          console.warn('Failed to populate taste queue:', err);
+          const fallbackQueue = RecommendationEngine.generateRecommendationQueue(
+            SEED_TRACKS,
+            preferences,
+            track,
+            6,
+            [track.id]
+          );
+          setQueue(fallbackQueue);
+        }
+      })();
     }
 
     if (audioRef.current) {
@@ -265,7 +300,7 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
           setIsPlaying(false);
         });
     }
-  }, [finalizeCurrentPlaySession]);
+  }, [finalizeCurrentPlaySession, preferences]);
 
   const togglePlay = () => {
     if (!audioRef.current || !currentTrack) return;
@@ -296,7 +331,7 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const next = () => {
+  const next = async () => {
     if (queue.length > 0) {
       const nextTrack = queue[0];
       const remainingQueue = queue.slice(1);
@@ -304,18 +339,36 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
         setHistory(prev => [currentTrack, ...prev].slice(0, 30));
       }
       playTrack(nextTrack, remainingQueue);
-    } else if (preferences.autoplayEnabled && currentTrack) {
-      // Trigger taste recommendation
-      RecommendationEngine.selectNextTrack(
-        SEED_TRACKS,
-        preferences,
-        currentTrack,
-        preferences.recentlyPlayed
-      );
-      handleTrackEnded();
-    } else {
-      pause();
+      return;
     }
+
+    // Queue is empty: dynamically pick next track according to user's music taste
+    if (currentTrack) {
+      try {
+        setIsLoading(true);
+        const candidates = await MusicProviderService.getTrending(35);
+        const pool = candidates.length > 0 ? candidates : SEED_TRACKS;
+        const nextChoice = RecommendationEngine.selectNextTrack(
+          pool,
+          preferences,
+          currentTrack,
+          preferences.recentlyPlayed
+        );
+        if (nextChoice) {
+          if (currentTrack) {
+            setHistory(prev => [currentTrack, ...prev].slice(0, 30));
+          }
+          playTrack(nextChoice);
+          return;
+        }
+      } catch (err) {
+        console.warn('Taste next track failed:', err);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+
+    pause();
   };
 
   const previous = () => {

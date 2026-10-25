@@ -12,9 +12,10 @@ interface TrackRowProps {
   track: Track;
   index?: number;
   playlistContext?: Track[];
+  isSearchResult?: boolean;
 }
 
-export function TrackRow({ track, index, playlistContext }: TrackRowProps) {
+export function TrackRow({ track, index, playlistContext, isSearchResult }: TrackRowProps) {
   const { currentTrack, isPlaying, playTrack, togglePlay, addToQueue, playNext } = usePlayback();
   const { isLiked, toggleLike, excludeTrack, excludeArtist } = useLibrary();
   const [showMenu, setShowMenu] = useState(false);
@@ -28,7 +29,11 @@ export function TrackRow({ track, index, playlistContext }: TrackRowProps) {
     if (isCurrent) {
       togglePlay();
     } else {
-      playTrack(track, playlistContext);
+      if (isSearchResult) {
+        playTrack(track, undefined, { isSearchPlay: true });
+      } else {
+        playTrack(track, playlistContext);
+      }
     }
   };
 

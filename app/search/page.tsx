@@ -195,7 +195,7 @@ export default function SearchPage() {
                         Top Result
                       </p>
                       <div
-                        onClick={() => playTrack(topTrack, results.tracks)}
+                        onClick={() => playTrack(topTrack, undefined, { isSearchPlay: true })}
                         className="group relative p-6 rounded-2xl bg-gradient-to-br from-tavilo-card to-[#181d28] border border-tavilo-border/80 hover:border-tavilo-green/40 transition-all cursor-pointer shadow-xl"
                       >
                         <div className="relative w-24 h-24 rounded-2xl overflow-hidden mb-4 bg-black/40 shadow-lg">
@@ -231,12 +231,12 @@ export default function SearchPage() {
                       Songs ({results.tracks.length})
                     </p>
                     <div className="bg-tavilo-card/50 border border-tavilo-border rounded-2xl p-2 space-y-1">
-                      {results.tracks.slice(0, 6).map((track, idx) => (
+                      {results.tracks.slice(0, 8).map((track, idx) => (
                         <TrackRow
                           key={track.id}
                           track={track}
                           index={idx}
-                          playlistContext={results.tracks}
+                          isSearchResult={true}
                         />
                       ))}
                     </div>
@@ -258,7 +258,7 @@ export default function SearchPage() {
                           key={artist.id}
                           onClick={() => {
                             if (artist.topTracks && artist.topTracks.length > 0) {
-                              playTrack(artist.topTracks[0], artist.topTracks);
+                              playTrack(artist.topTracks[0], undefined, { isSearchPlay: true });
                             }
                           }}
                           className="group p-3 rounded-2xl bg-tavilo-card/60 hover:bg-tavilo-card border border-tavilo-border/60 hover:border-tavilo-violet/40 transition-all text-center cursor-pointer shadow-md"
