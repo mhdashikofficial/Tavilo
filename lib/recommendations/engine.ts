@@ -1,4 +1,5 @@
-import { Track, UserPreferences, TuneMixMode, ListeningHistoryItem } from '@/types/music';
+import { Track, UserPreferences, ListeningHistoryItem } from '@/types/music';
+import { getSonicProfileForTrack } from './sonicGraph';
 
 export interface ScoredTrack {
   track: Track;
@@ -8,7 +9,7 @@ export interface ScoredTrack {
 
 export class RecommendationEngine {
   /**
-   * Scores a candidate track based on user preferences and current listening context.
+   * Scores a candidate track based on sonic compatibility, user preferences, and current listening context.
    */
   public static scoreTrack(
     candidate: Track,
@@ -30,14 +31,121 @@ export class RecommendationEngine {
       return { track: candidate, score: -100, reasons: ['Excluded artist'] };
     }
 
-    // 2. Liked Tracks
+    const candidateArtistLower = candidate.artist.toLowerCase();
+    const candidateTitleLower = candidate.title.toLowerCase();
+    const candidateGenreLower = (candidate.genre || '').toLowerCase();
+
+    // 2. Sonic Compatibility & Harmonic Context (if current track exists)
+    if (currentTrack) {
+      // Don't recommend the exact same track
+      if (candidate.id === currentTrack.id) {
+        return { track: candidate, score: -100, reasons: ['Current track'] };
+      }
+
+      const currentTitleLower = currentTrack.title.toLowerCase();
+      const currentArtistLower = currentTrack.artist.toLowerCase();
+
+      // Duplicate Song Title / Repetitive Remix filter:
+      // If candidate has almost identical title to current track (e.g. another "Faded" or "Golden Brown"),
+      // penalize so user gets the NEXT song in that vibe, not the same song repeated!
+      const currentCleanTitle = currentTitleLower.replace(/[\(\[\{].*?[\)\]\}]/g, '').trim();
+      const candidateCleanTitle = candidateTitleLower.replace(/[\(\[\{].*?[\)\]\}]/g, '').trim();
+      if (
+        currentCleanTitle.length > 3 &&
+        (candidateCleanTitle.includes(currentCleanTitle) || currentCleanTitle.includes(candidateCleanTitle))
+      ) {
+        score -= 8.0;
+        reasons.push('Avoid repeating same song title');
+      }
+
+      // Sonic Profile Analysis
+      const currentProfile = getSonicProfileForTrack(
+        currentTrack.title,
+        currentTrack.artist,
+        currentTrack.genre
+      );
+      const candidateProfile = getSonicProfileForTrack(
+        candidate.title,
+        candidate.artist,
+        candidate.genre
+      );
+
+      // A. Clashing Genre Penalty (Strict filter)
+      const isClashing = currentProfile.clashingGenres.some(cg =>
+        candidateGenreLower.includes(cg.toLowerCase()) ||
+        candidateProfile.primaryGenre.toLowerCase() === cg.toLowerCase()
+      );
+      if (isClashing) {
+        score -= 20.0; // Disqualify clashing genres (e.g. Dubstep after Golden Brown, or Folk after Alan Walker)
+        return { track: candidate, score: -20, reasons: ['Sonic clash with current music style'] };
+      }
+
+      // B. Genre Compatibility
+      const isExactGenre =
+        candidateGenreLower === (currentTrack.genre || '').toLowerCase() ||
+        candidateProfile.primaryGenre.toLowerCase() === currentProfile.primaryGenre.toLowerCase();
+
+      const isCompatibleGenre = currentProfile.compatibleGenres.some(cg =>
+        candidateGenreLower.includes(cg.toLowerCase()) ||
+        candidateProfile.compatibleGenres.some(cpg => cpg.toLowerCase() === cg.toLowerCase())
+      );
+
+      if (isExactGenre) {
+        score += 5.5;
+        reasons.push(`Exact genre match (${candidate.genre || currentProfile.primaryGenre})`);
+      } else if (isCompatibleGenre) {
+        score += 3.5;
+        reasons.push(`Compatible sonic family (${candidate.genre || candidateProfile.primaryGenre})`);
+      } else {
+        // Unrelated genre without being explicitly clashing
+        score -= 3.0;
+      }
+
+      // C. Acoustic Texture Match (organic vs electronic)
+      if (currentProfile.acousticType === candidateProfile.acousticType) {
+        score += 3.5;
+        reasons.push(`Acoustic texture harmony (${currentProfile.acousticType})`);
+      } else if (
+        (currentProfile.acousticType === 'organic' && candidateProfile.acousticType === 'electronic') ||
+        (currentProfile.acousticType === 'electronic' && candidateProfile.acousticType === 'organic')
+      ) {
+        score -= 6.0;
+        reasons.push('Acoustic texture mismatch');
+      }
+
+      // D. Mood Resonance
+      if (candidate.moods && currentProfile.compatibleMoods) {
+        const overlap = candidate.moods.filter(m =>
+          currentProfile.compatibleMoods.some(cm => cm.toLowerCase() === m.toLowerCase())
+        );
+        if (overlap.length > 0) {
+          score += overlap.length * 2.0;
+          reasons.push(`Mood harmony: ${overlap.join(', ')}`);
+        }
+      }
+
+      // E. Artist Proximity & Variety
+      if (candidateArtistLower === currentArtistLower) {
+        // Mild bonus if user likes this artist, but check if played recently
+        const recentSameArtist = recentHistory.slice(0, 3).some(
+          h => h.track.artist.toLowerCase() === candidateArtistLower
+        );
+        if (recentSameArtist) {
+          score -= 5.0; // Artist variety dampener
+          reasons.push('Artist variety dampener');
+        } else {
+          score += 1.5;
+          reasons.push('Same artist');
+        }
+      }
+    }
+
+    // 3. User Liked Tracks & Affinities
     if (preferences.likedTrackIds.includes(candidate.id)) {
       score += 4.0;
       reasons.push('Liked track');
     }
 
-    // 3. Artist Affinity
-    const candidateArtistLower = candidate.artist.toLowerCase();
     const artistPlayCount = preferences.artistPlayCounts[candidateArtistLower] || 0;
     if (preferences.followedArtistNames.some(a => a.toLowerCase() === candidateArtistLower)) {
       score += 3.5;
@@ -48,39 +156,9 @@ export class RecommendationEngine {
       reasons.push(`Frequently played artist (${artistPlayCount} plays)`);
     }
 
-    // 4. Current Track Similarity (Continuity)
-    if (currentTrack) {
-      // Don't recommend the exact same track
-      if (candidate.id === currentTrack.id) {
-        return { track: candidate, score: -100, reasons: ['Current track'] };
-      }
-
-      // Same genre
-      if (candidate.genre && currentTrack.genre && candidate.genre.toLowerCase() === currentTrack.genre.toLowerCase()) {
-        score += 2.5;
-        reasons.push(`Matches current genre (${candidate.genre})`);
-      }
-
-      // Overlapping moods
-      if (candidate.moods && currentTrack.moods) {
-        const overlap = candidate.moods.filter(m => currentTrack.moods?.includes(m));
-        if (overlap.length > 0) {
-          score += overlap.length * 1.5;
-          reasons.push(`Shared mood: ${overlap.join(', ')}`);
-        }
-      }
-
-      // Same artist continuity bonus (mild)
-      if (candidate.artist.toLowerCase() === currentTrack.artist.toLowerCase()) {
-        score += 1.0;
-        reasons.push('Same artist');
-      }
-    }
-
-    // 5. User Genre Weights
+    // 4. User Genre Weights
     if (candidate.genre) {
-      const gLower = candidate.genre.toLowerCase();
-      const weight = preferences.genreWeights[gLower] || 0;
+      const weight = preferences.genreWeights[candidateGenreLower] || 0;
       if (weight > 0) {
         const gBonus = Math.min(4.0, weight * 0.8);
         score += gBonus;
@@ -88,35 +166,23 @@ export class RecommendationEngine {
       }
     }
 
-    // 6. Recency and Repetition Penalties
-    // Check if played recently in the last 15 tracks
+    // 5. Recency and Skip Penalties
     const recentIndex = recentHistory.findIndex(h => h.track.id === candidate.id);
     if (recentIndex !== -1) {
-      // Very recently played (top of history) gets heavy penalty
-      const recencyPenalty = Math.max(1, 10 - recentIndex);
+      const recencyPenalty = Math.max(2, 10 - recentIndex);
       score -= recencyPenalty;
       reasons.push('Recently played');
     }
 
-    // Check if artist was played in the last 3 tracks (artist fatigue)
-    const recentArtistPlays = recentHistory.slice(0, 3).filter(
-      h => h.track.artist.toLowerCase() === candidateArtistLower
-    ).length;
-    if (recentArtistPlays > 0) {
-      score -= recentArtistPlays * 3.0;
-      reasons.push('Artist variety dampener');
-    }
-
-    // 7. Skip history penalty
     const skippedRecord = preferences.recentlyPlayed.find(
       h => h.track.id === candidate.id && !h.completed && h.listenRatio < 0.25
     );
     if (skippedRecord) {
-      score -= 4.0;
+      score -= 5.0;
       reasons.push('Previously skipped quickly');
     }
 
-    // 8. Tune My Mix Modulation
+    // 6. Tune My Mix Calibration
     const mode = preferences.tuneMixMode || 'balanced';
     const isFamiliar = (
       preferences.likedTrackIds.includes(candidate.id) ||
@@ -126,14 +192,14 @@ export class RecommendationEngine {
 
     if (mode === 'familiar') {
       if (isFamiliar) {
-        score += 3.0;
+        score += 3.5;
         reasons.push('Familiar favorites boost');
       } else {
-        score -= 1.5;
+        score -= 2.0;
       }
     } else if (mode === 'discovery') {
       if (!isFamiliar && recentIndex === -1) {
-        score += 4.0;
+        score += 4.5;
         reasons.push('New discovery boost');
       } else if (isFamiliar) {
         score -= 2.0;
@@ -149,8 +215,8 @@ export class RecommendationEngine {
   }
 
   /**
-   * Ranks candidate tracks and selects the next recommended track.
-   * Uses weighted pseudo-random selection among the top candidates to ensure variety.
+   * Ranks candidate tracks and selects the single next recommended track.
+   * Uses weighted sampling across top compatible candidates for variety.
    */
   public static selectNextTrack(
     candidates: Track[],
@@ -162,13 +228,20 @@ export class RecommendationEngine {
 
     const scored = candidates
       .map(track => this.scoreTrack(track, preferences, currentTrack, recentHistory))
-      .filter(s => s.score > 0)
+      .filter(s => s.score > 2.0) // Require minimum compatibility
       .sort((a, b) => b.score - a.score);
 
-    if (scored.length === 0) return null;
+    if (scored.length === 0) {
+      // Fallback: pick any track with score > 0
+      const anyScored = candidates
+        .map(track => this.scoreTrack(track, preferences, currentTrack, recentHistory))
+        .filter(s => s.score > 0)
+        .sort((a, b) => b.score - a.score);
+      return anyScored.length > 0 ? anyScored[0].track : candidates[0];
+    }
 
-    // Pick from top 5 with weighted probability for serendipity
-    const poolSize = Math.min(5, scored.length);
+    // Sample from top 4 highest scoring tracks
+    const poolSize = Math.min(4, scored.length);
     const topPool = scored.slice(0, poolSize);
     const totalWeight = topPool.reduce((acc, curr) => acc + curr.score, 0);
 
@@ -199,7 +272,7 @@ export class RecommendationEngine {
 
     const scored = available
       .map(track => this.scoreTrack(track, preferences, currentTrack, preferences.recentlyPlayed))
-      .filter(s => s.score > 0)
+      .filter(s => s.score > 2.0) // Only include genuinely compatible tracks
       .sort((a, b) => b.score - a.score);
 
     const result: Track[] = [];
@@ -208,7 +281,7 @@ export class RecommendationEngine {
     for (const item of scored) {
       if (result.length >= count) break;
       const art = item.track.artist.toLowerCase();
-      // Avoid clustering more than 2 tracks by the same artist in the recommended queue
+      // Avoid clustering more than 2 tracks by the same artist
       const countForArtist = result.filter(r => r.artist.toLowerCase() === art).length;
       if (countForArtist < 2) {
         result.push(item.track);

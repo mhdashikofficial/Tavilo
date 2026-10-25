@@ -21,8 +21,9 @@ export async function POST(req: NextRequest) {
       existingQueueIds?: string[];
     } = body;
 
-    const trending = await MusicProviderService.getTrending(30);
-    const candidatePool = trending.length > 0 ? trending : SEED_TRACKS;
+    const candidatePool = currentTrack
+      ? await MusicProviderService.getTailoredCandidates(currentTrack, preferences)
+      : await MusicProviderService.getTrending(30);
 
     const recommended = RecommendationEngine.generateRecommendationQueue(
       candidatePool,

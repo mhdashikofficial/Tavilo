@@ -75,6 +75,22 @@ export async function fetchAudiusTrending(limit: number = 20): Promise<Track[]> 
   }
 }
 
+export async function fetchAudiusTrendingByGenre(genre: string, limit: number = 20): Promise<Track[]> {
+  try {
+    const res = await fetch(
+      `${AUDIUS_API_BASE}/v1/tracks/trending?genre=${encodeURIComponent(genre)}&app_name=${APP_NAME}&limit=${limit}`,
+      { next: { revalidate: 1800 } }
+    );
+    if (!res.ok) return [];
+    const data = await res.json();
+    if (!data.data || !Array.isArray(data.data)) return [];
+    return data.data.map(normalizeAudiusTrack);
+  } catch (err) {
+    console.warn(`Failed to fetch Audius trending for genre ${genre}:`, err);
+    return [];
+  }
+}
+
 export async function searchAudiusTracks(query: string, limit: number = 20): Promise<Track[]> {
   try {
     const res = await fetch(

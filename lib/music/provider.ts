@@ -1,7 +1,8 @@
-import { Track, SearchResult, Playlist, Artist, Album } from '@/types/music';
+import { Track, SearchResult, Playlist, Artist, Album, UserPreferences } from '@/types/music';
 import { SEED_TRACKS, CURATED_PLAYLISTS, MOOD_CATEGORIES } from './seed';
-import { fetchAudiusTrending, searchAudiusTracks, fetchAudiusTrackById } from './audius';
+import { fetchAudiusTrending, searchAudiusTracks, fetchAudiusTrackById, fetchAudiusTrendingByGenre } from './audius';
 import { searchJamendo, isJamendoConfigured } from './jamendo';
+import { getSonicProfileForTrack } from '@/lib/recommendations/sonicGraph';
 
 export class MusicProviderService {
   /**
@@ -19,6 +20,70 @@ export class MusicProviderService {
       console.warn('Error fetching live trending, falling back to seed catalog:', err);
     }
     return SEED_TRACKS;
+  }
+
+  /**
+   * Retrieves high-relevance candidates tailored specifically to the sonic DNA of the playing track
+   */
+  public static async getTailoredCandidates(currentTrack: Track, preferences?: UserPreferences): Promise<Track[]> {
+    const profile = getSonicProfileForTrack(currentTrack.title, currentTrack.artist, currentTrack.genre);
+    const queries: Promise<Track[]>[] = [];
+
+    // 1. Search for tracks by the artist / landmark keywords
+    queries.push(searchAudiusTracks(currentTrack.artist, 6));
+
+    // 2. Search for tracks using primary and secondary search seeds from sonic profile
+    if (profile.searchSeeds && profile.searchSeeds.length > 0) {
+      queries.push(searchAudiusTracks(profile.searchSeeds[0], 8));
+      if (profile.searchSeeds[1]) {
+        queries.push(searchAudiusTracks(profile.searchSeeds[1], 6));
+      }
+    }
+
+    // 3. Fetch trending within the primary genre channel
+    queries.push(fetchAudiusTrendingByGenre(profile.primaryGenre, 8));
+
+    // 4. Fetch trending within 1st-degree compatible genre channel
+    if (profile.compatibleGenres && profile.compatibleGenres.length > 1) {
+      const secondGenre = profile.compatibleGenres.find(
+        g => g.toLowerCase() !== profile.primaryGenre.toLowerCase()
+      );
+      if (secondGenre) {
+        queries.push(fetchAudiusTrendingByGenre(secondGenre, 8));
+      }
+    }
+
+    // Execute parallel retrieval
+    const settled = await Promise.allSettled(queries);
+    const liveTracks: Track[] = [];
+    settled.forEach(s => {
+      if (s.status === 'fulfilled' && Array.isArray(s.value)) {
+        liveTracks.push(...s.value);
+      }
+    });
+
+    // 5. Match local seed tracks that share compatible genres and acoustic type
+    const compatibleSeed = SEED_TRACKS.filter(t => {
+      if (t.id === currentTrack.id) return false;
+      const gMatch = profile.compatibleGenres.some(
+        cg =>
+          cg.toLowerCase() === (t.genre || '').toLowerCase() ||
+          t.genres?.some(tg => tg.toLowerCase() === cg.toLowerCase())
+      );
+      return gMatch;
+    });
+
+    // Deduplicate all candidates
+    const trackMap = new Map<string, Track>();
+    for (const t of [...liveTracks, ...compatibleSeed]) {
+      if (t.id === currentTrack.id) continue;
+      const key = `${t.title.toLowerCase()} - ${t.artist.toLowerCase()}`;
+      if (!trackMap.has(key)) {
+        trackMap.set(key, t);
+      }
+    }
+
+    return Array.from(trackMap.values());
   }
 
   /**

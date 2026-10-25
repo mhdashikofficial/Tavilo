@@ -199,13 +199,13 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
     }
 
     // Queue is empty, check taste-based Autoplay
-    if (preferences.autoplayEnabled) {
+    if (preferences.autoplayEnabled && currentTrack) {
       try {
         setIsLoading(true);
-        // Candidate pool from trending / mood matching
-        const candidates = await MusicProviderService.getTrending(25);
+        // Candidate pool tailored to the sonic identity of the current track
+        const candidates = await MusicProviderService.getTailoredCandidates(currentTrack, preferences);
         const nextChoice = RecommendationEngine.selectNextTrack(
-          candidates.length > 0 ? candidates : SEED_TRACKS,
+          candidates,
           preferences,
           currentTrack,
           preferences.recentlyPlayed
@@ -261,10 +261,9 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
       // Asynchronously generate a tailored taste queue based on user preferences and this song
       (async () => {
         try {
-          const trending = await MusicProviderService.getTrending(35);
-          const pool = trending.length > 0 ? trending : SEED_TRACKS;
+          const candidates = await MusicProviderService.getTailoredCandidates(track, preferences);
           const tasteQueue = RecommendationEngine.generateRecommendationQueue(
-            pool,
+            candidates,
             preferences,
             track,
             12,
@@ -346,10 +345,9 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
     if (currentTrack) {
       try {
         setIsLoading(true);
-        const candidates = await MusicProviderService.getTrending(35);
-        const pool = candidates.length > 0 ? candidates : SEED_TRACKS;
+        const candidates = await MusicProviderService.getTailoredCandidates(currentTrack, preferences);
         const nextChoice = RecommendationEngine.selectNextTrack(
-          pool,
+          candidates,
           preferences,
           currentTrack,
           preferences.recentlyPlayed
