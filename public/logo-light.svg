@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 140" fill="none" width="100%" height="100%">
+  <defs>
+    <linearGradient id="tavilo-green-grad-light" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#059669" />
+      <stop offset="100%" stop-color="#047857" />
+    </linearGradient>
+    <linearGradient id="tavilo-violet-grad-light" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#7C3AED" />
+      <stop offset="100%" stop-color="#6D28D9" />
+    </linearGradient>
+  </defs>
+
+  <g transform="translate(16, 10)">
+    <rect x="0" y="0" width="120" height="120" rx="30" fill="#F1F5F9" stroke="#CBD5E1" stroke-width="2" />
+    <path d="M 28 38 C 28 34.686 30.686 32 34 32 L 86 32 C 89.314 32 92 34.686 92 38 C 92 41.314 89.314 44 86 44 L 34 44 C 30.686 44 28 41.314 28 38 Z" fill="url(#tavilo-green-grad-light)" />
+    <rect x="36" y="52" width="7" height="26" rx="3.5" fill="#7C3AED" opacity="0.8" />
+    <rect x="49" y="48" width="8" height="48" rx="4" fill="url(#tavilo-green-grad-light)" />
+    <rect x="63" y="48" width="8" height="42" rx="4" fill="url(#tavilo-green-grad-light)" />
+    <rect x="77" y="54" width="7" height="30" rx="3.5" fill="url(#tavilo-violet-grad-light)" />
+    <circle cx="60" cy="100" r="4" fill="#059669" />
+  </g>
+
+  <g transform="translate(156, 82)">
+    <text font-family="'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-weight="900" font-size="52" letter-spacing="4" fill="#0F172A">
+      TAVIL<tspan fill="#059669">O</tspan>
+    </text>
+    <text x="4" y="26" font-family="'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-weight="600" font-size="13" letter-spacing="3" fill="#64748B">
+      YOUR SOUND. YOUR WORLD.
+    </text>
+  </g>
+</svg>

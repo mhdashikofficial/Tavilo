@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 140" fill="none" width="100%" height="100%">
+  <defs>
+    <linearGradient id="tavilo-green-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00E599" />
+      <stop offset="100%" stop-color="#059669" />
+    </linearGradient>
+    <linearGradient id="tavilo-violet-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#C084FC" />
+      <stop offset="100%" stop-color="#7C3AED" />
+    </linearGradient>
+    <linearGradient id="tavilo-glow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00E599" stop-opacity="0.3" />
+      <stop offset="100%" stop-color="#8B5CF6" stop-opacity="0.1" />
+    </linearGradient>
+    <filter id="soft-glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="8" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- Emblem Background / Glow -->
+  <g transform="translate(16, 10)">
+    <rect x="0" y="0" width="120" height="120" rx="30" fill="#12151D" stroke="#252B3B" stroke-width="2" />
+    <circle cx="60" cy="60" r="48" fill="url(#tavilo-glow)" filter="url(#soft-glow)" />
+
+    <!-- Tavilo Icon: Sculpted Harmonic Wave & Monogram T -->
+    <!-- Horizontal Top Bar with rounded ends -->
+    <path d="M 28 38 C 28 34.686 30.686 32 34 32 L 86 32 C 89.314 32 92 34.686 92 38 C 92 41.314 89.314 44 86 44 L 34 44 C 30.686 44 28 41.314 28 38 Z" fill="url(#tavilo-green-grad)" />
+
+    <!-- Audio Pulse Waveform Columns forming the T stem and rhythmic sound energy -->
+    <!-- Column 1 (Left accent pulse) -->
+    <rect x="36" y="52" width="7" height="26" rx="3.5" fill="#8B5CF6" opacity="0.8" />
+    
+    <!-- Column 2 (Main stem left) -->
+    <rect x="49" y="48" width="8" height="48" rx="4" fill="url(#tavilo-green-grad)" />
+    
+    <!-- Column 3 (Main stem right) -->
+    <rect x="63" y="48" width="8" height="42" rx="4" fill="url(#tavilo-green-grad)" />
+    
+    <!-- Column 4 (Right accent pulse) -->
+    <rect x="77" y="54" width="7" height="30" rx="3.5" fill="url(#tavilo-violet-grad)" />
+
+    <!-- Dynamic sonic dot node -->
+    <circle cx="60" cy="100" r="4" fill="#00E599" />
+  </g>
+
+  <!-- Wordmark "TAVILO" -->
+  <g transform="translate(156, 82)">
+    <text font-family="'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-weight="900" font-size="52" letter-spacing="4" fill="#FFFFFF">
+      TAVIL<tspan fill="#00E599">O</tspan>
+    </text>
+    
+    <!-- Subtitle Tagline -->
+    <text x="4" y="26" font-family="'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-weight="500" font-size="13" letter-spacing="3" fill="#94A3B8">
+      YOUR SOUND. YOUR WORLD.
+    </text>
+  </g>
+</svg>
