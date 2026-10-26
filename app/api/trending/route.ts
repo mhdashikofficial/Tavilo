@@ -6,12 +6,14 @@ export const dynamic = 'force-dynamic';
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const limit = parseInt(searchParams.get('limit') || '24', 10);
+    const category = (searchParams.get('category') || 'all') as 'malayalam' | 'english' | 'all';
+    const limit = parseInt(searchParams.get('limit') || '12', 10);
 
-    const tracks = await MusicProviderService.getTrending(limit);
+    const tracks = await MusicProviderService.getTrendingByCategory(category, limit);
 
     return NextResponse.json({
       success: true,
+      category,
       count: tracks.length,
       tracks,
     });

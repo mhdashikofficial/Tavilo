@@ -24,6 +24,35 @@ export class MusicProviderService {
   }
 
   /**
+   * Returns trending tracks categorized by Malayalam, English, or global blend from YouTube
+   */
+  public static async getTrendingByCategory(
+    category: 'malayalam' | 'english' | 'all' = 'all',
+    limit: number = 12
+  ): Promise<Track[]> {
+    try {
+      if (category === 'malayalam') {
+        const yt = await searchYouTube('latest trending malayalam songs official video', limit);
+        if (yt.length > 0) return yt;
+      } else if (category === 'english') {
+        const yt = await searchYouTube('trending english songs billboard hot official video', limit);
+        if (yt.length > 0) return yt;
+      } else {
+        const half = Math.ceil(limit / 2);
+        const [mal, eng] = await Promise.all([
+          searchYouTube('latest trending malayalam songs official video', half),
+          searchYouTube('trending english songs billboard hot official video', half),
+        ]);
+        const blended = [...mal, ...eng];
+        if (blended.length > 0) return blended.slice(0, limit);
+      }
+    } catch (err) {
+      console.warn('Error fetching YouTube trending category:', err);
+    }
+    return this.getTrending(limit);
+  }
+
+  /**
    * Retrieves high-relevance candidates tailored specifically to the sonic DNA of the playing track
    */
   public static async getTailoredCandidates(currentTrack: Track, preferences?: UserPreferences): Promise<Track[]> {

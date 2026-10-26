@@ -202,6 +202,14 @@ export const GENRE_SONIC_PROFILES: Record<string, SonicProfile> = {
     compatibleMoods: ['Upbeat', 'Romantic', 'Catchy', 'Empowering', 'Fun'],
     searchSeeds: ['pop', 'indie pop', 'synthpop', 'dance pop', 'electro pop'],
   },
+  malayalam: {
+    primaryGenre: 'Malayalam',
+    acousticType: 'organic',
+    compatibleGenres: ['Malayalam', 'Acoustic', 'Folk', 'Indie', 'Pop', 'Soundtrack', 'Classical', 'R&B/Soul'],
+    clashingGenres: ['Death Metal', 'Hardstyle', 'Drill', 'Dubstep'],
+    compatibleMoods: ['Romantic', 'Sentimental', 'Peaceful', 'Nostalgic', 'Fiery', 'Energizing', 'Melodic'],
+    searchSeeds: ['malayalam hit songs', 'mollywood music', 'malayalam melody songs', 'malayalam songs video'],
+  },
 };
 
 // Explicit landmark profiles for iconic tracks & artists
@@ -304,6 +312,40 @@ export const LANDMARK_TRACK_PROFILES: Record<string, Partial<SonicProfile>> = {
     clashingGenres: ['Hardstyle', 'Country', 'Bubblegum Pop'],
     compatibleMoods: ['Melancholy', 'Brooding', 'Sophisticated', 'Ethereal'],
     searchSeeds: ['art rock', 'indie alternative', 'post rock', 'melancholic indie'],
+  },
+
+  // Malayalam & Mollywood landmark profiles
+  'malayalam': {
+    primaryGenre: 'Malayalam',
+    acousticType: 'organic',
+    compatibleGenres: ['Malayalam', 'Acoustic', 'Folk', 'Indie', 'Soundtrack', 'Pop'],
+    clashingGenres: ['Hardstyle', 'Heavy Metal', 'Dubstep', 'Drill'],
+    compatibleMoods: ['Romantic', 'Sentimental', 'Peaceful', 'Nostalgic', 'Fiery', 'Energizing'],
+    searchSeeds: ['malayalam hit songs', 'mollywood songs', 'sushin shyam songs', 'jakes bejoy songs', 'malayalam melody'],
+  },
+  'sushin shyam': {
+    primaryGenre: 'Malayalam',
+    acousticType: 'organic',
+    compatibleGenres: ['Malayalam', 'Soundtrack', 'Indie', 'Alternative', 'Rock'],
+    clashingGenres: ['Hardstyle', 'Dubstep'],
+    compatibleMoods: ['Energizing', 'Fiery', 'Nostalgic', 'Melodic'],
+    searchSeeds: ['sushin shyam songs', 'aavesham songs', 'manjummel boys songs', 'malayalam hit songs'],
+  },
+  'jakes bejoy': {
+    primaryGenre: 'Malayalam',
+    acousticType: 'organic',
+    compatibleGenres: ['Malayalam', 'Soundtrack', 'Romantic', 'Acoustic'],
+    clashingGenres: ['Hardstyle', 'Dubstep'],
+    compatibleMoods: ['Romantic', 'Sentimental', 'Melodic'],
+    searchSeeds: ['jakes bejoy songs', 'malayalam video songs', 'sid sriram malayalam'],
+  },
+  'hesham': {
+    primaryGenre: 'Malayalam',
+    acousticType: 'organic',
+    compatibleGenres: ['Malayalam', 'Soundtrack', 'Romantic', 'Acoustic', 'Folk'],
+    clashingGenres: ['Hardstyle', 'Dubstep'],
+    compatibleMoods: ['Romantic', 'Peaceful', 'Sentimental'],
+    searchSeeds: ['hesham abdul wahab songs', 'hridhyam songs', 'malayalam romantic songs'],
   },
 };
 
