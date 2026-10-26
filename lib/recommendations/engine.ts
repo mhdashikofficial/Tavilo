@@ -1,5 +1,5 @@
 import { Track, UserPreferences, ListeningHistoryItem } from '@/types/music';
-import { getSonicProfileForTrack } from './sonicGraph';
+import { getSonicProfileForTrack, isMalayalamTrack } from './sonicGraph';
 
 export interface ScoredTrack {
   track: Track;
@@ -35,11 +35,35 @@ export class RecommendationEngine {
     const candidateTitleLower = candidate.title.toLowerCase();
     const candidateGenreLower = (candidate.genre || '').toLowerCase();
 
+    const isCurrentMalayalam = currentTrack ? isMalayalamTrack(currentTrack) : false;
+    const isCandidateMalayalam = isMalayalamTrack(candidate);
+
     // 2. Sonic Compatibility & Harmonic Context (if current track exists)
     if (currentTrack) {
       // Don't recommend the exact same track
       if (candidate.id === currentTrack.id) {
         return { track: candidate, score: -100, reasons: ['Current track'] };
+      }
+
+      // LANGUAGE & REGIONAL CONTINUITY RULE:
+      // If user is currently playing a Malayalam song, strictly recommend Malayalam from YouTube!
+      if (isCurrentMalayalam) {
+        if (isCandidateMalayalam) {
+          score += 35.0; // Enormous priority boost for Malayalam continuity
+          reasons.push('Malayalam musical continuity');
+        } else {
+          return {
+            track: candidate,
+            score: -100.0,
+            reasons: ['Disqualified: non-Malayalam song during Malayalam listening session'],
+          };
+        }
+      } else {
+        // If current track is NOT Malayalam, prevent abrupt regional jump
+        if (isCandidateMalayalam) {
+          score -= 15.0;
+          reasons.push('Language context separation');
+        }
       }
 
       const currentTitleLower = currentTrack.title.toLowerCase();

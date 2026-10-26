@@ -43,9 +43,9 @@ export default function PlaylistDetailPage() {
       setIsLoadingMore(true);
       const queryMap: Record<string, string> = {
         'playlist-malayalam-chartbusters': 'latest trending malayalam songs official video',
+        'playlist-malayalam-melodies': 'malayalam melody hit songs official video',
         'playlist-global-top-hits': 'trending english songs billboard hot official video',
-        'playlist-night-drive': 'night drive synthwave songs official video',
-        'playlist-focus-deep-work': 'deep focus lofi study beats music',
+        'playlist-south-viral': 'trending south indian viral songs anirudh official video',
       };
       const q = queryMap[curated.id] || `${curated.title} songs official`;
 

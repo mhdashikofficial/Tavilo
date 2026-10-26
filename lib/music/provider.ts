@@ -3,7 +3,7 @@ import { SEED_TRACKS, CURATED_PLAYLISTS, MOOD_CATEGORIES } from './seed';
 import { fetchAudiusTrending, searchAudiusTracks, fetchAudiusTrackById, fetchAudiusTrendingByGenre } from './audius';
 import { searchJamendo, isJamendoConfigured } from './jamendo';
 import { searchYouTube } from './youtube';
-import { getSonicProfileForTrack } from '@/lib/recommendations/sonicGraph';
+import { getSonicProfileForTrack, isMalayalamTrack } from '@/lib/recommendations/sonicGraph';
 
 export class MusicProviderService {
   /**
@@ -61,40 +61,63 @@ export class MusicProviderService {
    * Retrieves high-relevance candidates tailored specifically to the sonic DNA of the playing track
    */
   public static async getTailoredCandidates(currentTrack: Track, preferences?: UserPreferences): Promise<Track[]> {
+    const isMalayalam = isMalayalamTrack(currentTrack);
+
+    // If playing a Malayalam song, focus 100% on YouTube Malayalam queries
+    if (isMalayalam) {
+      const cleanArtist = currentTrack.artist.replace(/[\(\[\{].*?[\)\]\}]/g, '').trim();
+      const cleanTitle = currentTrack.title.replace(/[\(\[\{].*?[\)\]\}]/g, '').trim();
+
+      const ytQueries: Promise<Track[]>[] = [
+        searchYouTube(`${cleanArtist} malayalam songs official video`, 12),
+        searchYouTube('latest trending malayalam songs official video', 15),
+        searchYouTube('top hit malayalam movie video songs', 12),
+        searchYouTube('malayalam cinema melodies official video', 10),
+      ];
+
+      if (cleanTitle.length > 3) {
+        ytQueries.push(searchYouTube(`${cleanTitle} malayalam song`, 8));
+      }
+
+      const settled = await Promise.allSettled(ytQueries);
+      const candidates: Track[] = [];
+      settled.forEach(s => {
+        if (s.status === 'fulfilled' && Array.isArray(s.value)) {
+          candidates.push(...s.value);
+        }
+      });
+
+      // Filter to ensure candidate pool is strictly Malayalam
+      const malayalamCandidates = candidates.filter(t => isMalayalamTrack(t) || t.id.startsWith('yt-'));
+      const seedMalayalam = SEED_TRACKS.filter(t => isMalayalamTrack(t) && t.id !== currentTrack.id);
+
+      const trackMap = new Map<string, Track>();
+      for (const t of [...malayalamCandidates, ...seedMalayalam]) {
+        if (t.id === currentTrack.id) continue;
+        const key = `${t.title.toLowerCase()} - ${t.artist.toLowerCase()}`;
+        if (!trackMap.has(key)) {
+          trackMap.set(key, t);
+        }
+      }
+
+      return Array.from(trackMap.values());
+    }
+
+    // For other genres (e.g. English Pop, Electronic, Rock), query YouTube + tailored seeds
     const profile = getSonicProfileForTrack(currentTrack.title, currentTrack.artist, currentTrack.genre);
-    const queries: Promise<Track[]>[] = [];
+    const queries: Promise<Track[]>[] = [
+      searchYouTube(`${currentTrack.artist} songs official video`, 10),
+    ];
 
-    // 1. Search for tracks by the artist / landmark keywords
-    queries.push(searchAudiusTracks(currentTrack.artist, 6));
-
-    // 2. Search for tracks using primary and secondary search seeds from sonic profile
     if (profile.searchSeeds && profile.searchSeeds.length > 0) {
-      queries.push(searchAudiusTracks(profile.searchSeeds[0], 8));
+      queries.push(searchYouTube(`${profile.searchSeeds[0]} songs official video`, 10));
       if (profile.searchSeeds[1]) {
-        queries.push(searchAudiusTracks(profile.searchSeeds[1], 6));
+        queries.push(searchYouTube(`${profile.searchSeeds[1]} songs official video`, 8));
       }
     }
 
-    // 3. Fetch trending within the primary genre channel
-    queries.push(fetchAudiusTrendingByGenre(profile.primaryGenre, 8));
+    queries.push(searchYouTube('trending english songs billboard hot official video', 8));
 
-    // 4. Fetch trending within 1st-degree compatible genre channel
-    if (profile.compatibleGenres && profile.compatibleGenres.length > 1) {
-      const secondGenre = profile.compatibleGenres.find(
-        g => g.toLowerCase() !== profile.primaryGenre.toLowerCase()
-      );
-      if (secondGenre) {
-        queries.push(fetchAudiusTrendingByGenre(secondGenre, 8));
-      }
-    }
-
-    // 5. Query YouTube for similar tracks and artists
-    queries.push(searchYouTube(`${currentTrack.artist} songs`, 8));
-    if (profile.searchSeeds && profile.searchSeeds.length > 0) {
-      queries.push(searchYouTube(`${profile.searchSeeds[0]} music`, 8));
-    }
-
-    // Execute parallel retrieval
     const settled = await Promise.allSettled(queries);
     const liveTracks: Track[] = [];
     settled.forEach(s => {
@@ -103,18 +126,15 @@ export class MusicProviderService {
       }
     });
 
-    // 5. Match local seed tracks that share compatible genres and acoustic type
     const compatibleSeed = SEED_TRACKS.filter(t => {
       if (t.id === currentTrack.id) return false;
-      const gMatch = profile.compatibleGenres.some(
+      return profile.compatibleGenres.some(
         cg =>
           cg.toLowerCase() === (t.genre || '').toLowerCase() ||
           t.genres?.some(tg => tg.toLowerCase() === cg.toLowerCase())
       );
-      return gMatch;
     });
 
-    // Deduplicate all candidates
     const trackMap = new Map<string, Track>();
     for (const t of [...liveTracks, ...compatibleSeed]) {
       if (t.id === currentTrack.id) continue;

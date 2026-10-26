@@ -6,6 +6,7 @@ import { useLibrary } from '@/lib/library/LibraryContext';
 import { RecommendationEngine } from '@/lib/recommendations/engine';
 import { MusicProviderService } from '@/lib/music/provider';
 import { SEED_TRACKS } from '@/lib/music/seed';
+import { isMalayalamTrack } from '@/lib/recommendations/sonicGraph';
 
 declare global {
   interface Window {
@@ -387,8 +388,11 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
             setQueue(tasteQueue);
           } catch (err) {
             console.warn('Failed to populate taste queue:', err);
+            const pool = isMalayalamTrack(track)
+              ? SEED_TRACKS.filter(t => isMalayalamTrack(t))
+              : SEED_TRACKS.filter(t => !isMalayalamTrack(t));
             const fallbackQueue = RecommendationEngine.generateRecommendationQueue(
-              SEED_TRACKS,
+              pool.length > 0 ? pool : SEED_TRACKS,
               preferences,
               track,
               6,

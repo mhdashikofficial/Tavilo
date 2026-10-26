@@ -4,8 +4,8 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { Track, Playlist, UserPreferences, TuneMixMode, ListeningHistoryItem } from '@/types/music';
 import { CURATED_PLAYLISTS, SEED_TRACKS } from '@/lib/music/seed';
 
-const STORAGE_KEY_PREFS = 'tavilo_user_preferences_v1';
-const STORAGE_KEY_PLAYLISTS = 'tavilo_user_playlists_v1';
+const STORAGE_KEY_PREFS = 'tavilo_user_preferences_v4';
+const STORAGE_KEY_CUSTOM_PLAYLISTS = 'tavilo_user_custom_playlists_v4';
 
 const DEFAULT_PREFERENCES: UserPreferences = {
   likedTrackIds: [SEED_TRACKS[0].id, SEED_TRACKS[1].id],
@@ -56,12 +56,29 @@ const LibraryContext = createContext<LibraryContextType | undefined>(undefined);
 
 export function LibraryProvider({ children }: { children: React.ReactNode }) {
   const [preferences, setPreferences] = useState<UserPreferences>(DEFAULT_PREFERENCES);
-  const [playlists, setPlaylists] = useState<Playlist[]>(CURATED_PLAYLISTS);
+  const [customPlaylists, setCustomPlaylists] = useState<Playlist[]>([]);
   const [likedTrackEntities, setLikedTrackEntities] = useState<Record<string, Track>>({});
 
-  // Initialize from LocalStorage
+  // Combined playlists: clean Curated YouTube collections + user custom playlists
+  const playlists = [...CURATED_PLAYLISTS, ...customPlaylists];
+
+  // Initialize from LocalStorage and clean out unwanted legacy items
   useEffect(() => {
     try {
+      // Purge old cached playlists with unwanted tracks like Tavilo Horizon, Noctur, Deep Work
+      [
+        'tavilo_user_playlists_v1',
+        'tavilo_user_playlists_v2',
+        'tavilo_user_playlists_v3',
+        'tavilo_user_preferences_v1',
+        'tavilo_user_preferences_v2',
+        'tavilo_user_preferences_v3',
+      ].forEach(k => {
+        try {
+          localStorage.removeItem(k);
+        } catch {}
+      });
+
       const savedPrefs = localStorage.getItem(STORAGE_KEY_PREFS);
       if (savedPrefs) {
         const parsed = JSON.parse(savedPrefs);
@@ -71,11 +88,23 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
         });
       }
 
-      const savedPlaylists = localStorage.getItem(STORAGE_KEY_PLAYLISTS);
+      const savedPlaylists = localStorage.getItem(STORAGE_KEY_CUSTOM_PLAYLISTS);
       if (savedPlaylists) {
         const parsedPl = JSON.parse(savedPlaylists);
-        if (Array.isArray(parsedPl) && parsedPl.length > 0) {
-          setPlaylists(parsedPl);
+        if (Array.isArray(parsedPl)) {
+          // Strictly reject legacy playlists with horizon, noctur, deep, or non-custom
+          const cleanCustom = parsedPl.filter(
+            (p: Playlist) =>
+              p.isCustom &&
+              !p.id.includes('tavilo') &&
+              !p.id.includes('horizon') &&
+              !p.id.includes('noctur') &&
+              !p.id.includes('deep') &&
+              !p.title.toLowerCase().includes('horizon') &&
+              !p.title.toLowerCase().includes('noctur') &&
+              !p.title.toLowerCase().includes('deep')
+          );
+          setCustomPlaylists(cleanCustom);
         }
       }
 
@@ -99,14 +128,14 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
     }
   }, [preferences]);
 
-  // Save playlists
+  // Save custom playlists
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_KEY_PLAYLISTS, JSON.stringify(playlists));
+      localStorage.setItem(STORAGE_KEY_CUSTOM_PLAYLISTS, JSON.stringify(customPlaylists));
     } catch (err) {
-      console.warn('Error saving playlists to localStorage:', err);
+      console.warn('Error saving custom playlists to localStorage:', err);
     }
-  }, [playlists]);
+  }, [customPlaylists]);
 
   const isLiked = (trackId: string): boolean => {
     return preferences.likedTrackIds.includes(trackId);
@@ -192,29 +221,29 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
       id: `custom-playlist-${Date.now()}`,
       title,
       description,
-      artwork: 'https://i.ytimg.com/vi/60ItHLz5WEA/hqdefault.jpg',
+      artwork: 'https://i.ytimg.com/vi/tOM-nWPcR4U/hqdefault.jpg',
       tracks: [],
       trackCount: 0,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       isCustom: true,
     };
-    setPlaylists(prev => [newPl, ...prev]);
+    setCustomPlaylists(prev => [newPl, ...prev]);
     return newPl;
   };
 
   const updatePlaylist = (id: string, title: string, description: string = '') => {
-    setPlaylists(prev =>
+    setCustomPlaylists(prev =>
       prev.map(p => (p.id === id ? { ...p, title, description, updatedAt: new Date().toISOString() } : p))
     );
   };
 
   const deletePlaylist = (id: string) => {
-    setPlaylists(prev => prev.filter(p => p.id !== id));
+    setCustomPlaylists(prev => prev.filter(p => p.id !== id));
   };
 
   const addTrackToPlaylist = (playlistId: string, track: Track) => {
-    setPlaylists(prev =>
+    setCustomPlaylists(prev =>
       prev.map(p => {
         if (p.id !== playlistId) return p;
         if (p.tracks.some(t => t.id === track.id)) return p;
@@ -231,7 +260,7 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
   };
 
   const removeTrackFromPlaylist = (playlistId: string, trackId: string) => {
-    setPlaylists(prev =>
+    setCustomPlaylists(prev =>
       prev.map(p => {
         if (p.id !== playlistId) return p;
         const newTracks = p.tracks.filter(t => t.id !== trackId);

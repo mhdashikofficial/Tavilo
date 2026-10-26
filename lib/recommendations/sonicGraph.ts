@@ -205,10 +205,17 @@ export const GENRE_SONIC_PROFILES: Record<string, SonicProfile> = {
   malayalam: {
     primaryGenre: 'Malayalam',
     acousticType: 'organic',
-    compatibleGenres: ['Malayalam', 'Acoustic', 'Folk', 'Indie', 'Pop', 'Soundtrack', 'Classical', 'R&B/Soul'],
-    clashingGenres: ['Death Metal', 'Hardstyle', 'Drill', 'Dubstep'],
+    compatibleGenres: ['Malayalam', 'Soundtrack', 'Indie', 'Folk', 'Acoustic', 'Pop'],
+    clashingGenres: ['Death Metal', 'Hardstyle', 'Drill', 'Dubstep', 'Techno', 'Heavy Metal', 'Country', 'Bluegrass'],
     compatibleMoods: ['Romantic', 'Sentimental', 'Peaceful', 'Nostalgic', 'Fiery', 'Energizing', 'Melodic'],
-    searchSeeds: ['malayalam hit songs', 'mollywood music', 'malayalam melody songs', 'malayalam songs video'],
+    searchSeeds: [
+      'latest trending malayalam songs official video',
+      'malayalam hit songs',
+      'mollywood songs',
+      'sushin shyam hit songs',
+      'hesham abdul wahab songs',
+      'malayalam melody songs',
+    ],
   },
 };
 
@@ -349,6 +356,88 @@ export const LANDMARK_TRACK_PROFILES: Record<string, Partial<SonicProfile>> = {
   },
 };
 
+export const MALAYALAM_KEYWORDS = [
+  'malayalam',
+  'mollywood',
+  'sushin',
+  'shyam',
+  'dabzee',
+  'hesham',
+  'hridayam',
+  'aavesham',
+  'illuminati',
+  'darshana',
+  'jaada',
+  'jakes bejoy',
+  'manjummel',
+  'kuthanthram',
+  'sid sriram',
+  'harisankar',
+  'vineeth sreenivasan',
+  'shaan rahman',
+  'gopi sundar',
+  'vidyasagar',
+  'm. jayachandran',
+  'jayachandran',
+  'bijibal',
+  'rex vijayan',
+  'job kurian',
+  'kailas menon',
+  'sithara',
+  'ks chithra',
+  'chithra',
+  'yesudas',
+  'mg sreekumar',
+  'sujatha',
+  'jassie gift',
+  'premam',
+  'premalu',
+  'bheeshma',
+  'minnal murali',
+  'lucifer',
+  'arm',
+  'bramayugam',
+  'kishkindha',
+  'aadujeevitham',
+  'goat life',
+  'king of kotha',
+  'kurup',
+  'kumbalangi',
+  'charlie',
+  'bangalore days',
+  'usthad hotel',
+  'drishyam',
+  'romancham',
+  'malare',
+  'aaradhike',
+  'pavizha mazha',
+  'jeevamshamayi',
+  'alare',
+  'omane',
+  'muzik247',
+  'saregama malayalam',
+  'manorama music',
+  'matinee now',
+  'speed audio',
+  'satyam audio',
+];
+
+export function isMalayalamTrack(track: {
+  title?: string;
+  artist?: string;
+  genre?: string;
+  genres?: string[];
+  album?: string;
+}): boolean {
+  if (!track) return false;
+  const g = (track.genre || '').toLowerCase();
+  if (g.includes('malayalam')) return true;
+  if (track.genres?.some(gen => gen.toLowerCase().includes('malayalam'))) return true;
+
+  const combined = `${track.title || ''} ${track.artist || ''} ${track.album || ''}`.toLowerCase();
+  return MALAYALAM_KEYWORDS.some(kw => combined.includes(kw));
+}
+
 /**
  * Returns the sonic profile for a track based on its title, artist, genre, and tags.
  */
@@ -356,6 +445,11 @@ export function getSonicProfileForTrack(title: string, artist: string, genre?: s
   const tLower = title.toLowerCase();
   const aLower = artist.toLowerCase();
   const gLower = (genre || '').toLowerCase();
+
+  // If detected as Malayalam, give it the dedicated Malayalam profile
+  if (isMalayalamTrack({ title, artist, genre })) {
+    return GENRE_SONIC_PROFILES.malayalam;
+  }
 
   // 1. Check landmark profiles (exact matches on artist or title keywords)
   for (const [key, profile] of Object.entries(LANDMARK_TRACK_PROFILES)) {

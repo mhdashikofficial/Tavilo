@@ -1,4 +1,5 @@
 import { Track } from '@/types/music';
+import { isMalayalamTrack } from '@/lib/recommendations/sonicGraph';
 
 function parseDuration(durationStr?: string): number {
   if (!durationStr) return 210;
@@ -79,6 +80,7 @@ export async function searchYouTube(query: string, limit: number = 20): Promise<
 
         const { artist, title } = cleanTitleAndArtist(rawTitle, channel);
         const artwork = `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+        const isMalayalam = isMalayalamTrack({ title, artist }) || query.toLowerCase().includes('malayalam');
 
         tracks.push({
           id: `yt-${videoId}`,
@@ -87,7 +89,7 @@ export async function searchYouTube(query: string, limit: number = 20): Promise<
           title,
           artist,
           artists: [artist],
-          album: 'YouTube Release',
+          album: isMalayalam ? 'Malayalam Hits' : 'YouTube Release',
           artwork,
           duration,
           streamUrl: videoId, // YouTube video ID used by YouTube IFrame Player
@@ -95,7 +97,8 @@ export async function searchYouTube(query: string, limit: number = 20): Promise<
           playbackSource: 'YouTube Official Embedded Player',
           licenseName: 'YouTube Standard License',
           licenseUrl: 'https://www.youtube.com/t/terms',
-          genre: 'Music',
+          genre: isMalayalam ? 'Malayalam' : 'Music',
+          genres: isMalayalam ? ['Malayalam', 'Soundtrack'] : ['Music'],
         });
 
         if (tracks.length >= limit) break;
