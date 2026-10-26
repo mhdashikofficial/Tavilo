@@ -19,6 +19,7 @@ import {
   Share2,
   Sliders,
   Check,
+  Tv,
 } from 'lucide-react';
 import { usePlayback } from '@/lib/playback/PlaybackContext';
 import { useLibrary } from '@/lib/library/LibraryContext';
@@ -54,6 +55,7 @@ export function FullScreenPlayer({ onOpenTuneMix }: FullScreenPlayerProps) {
 
   const { isLiked, toggleLike, dislikeTrack } = useLibrary();
   const [copiedShare, setCopiedShare] = useState(false);
+  const [showVideo, setShowVideo] = useState(false);
 
   if (!isFullScreenOpen || !currentTrack) return null;
 
@@ -92,10 +94,21 @@ export function FullScreenPlayer({ onOpenTuneMix }: FullScreenPlayerProps) {
           <ChevronDown className="w-6 h-6" />
         </button>
 
-        <div className="text-center">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-tavilo-green">
-            Playing from {currentTrack.providerName}
-          </p>
+        <div className="text-center flex flex-col items-center">
+          <div className="flex items-center space-x-2">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-tavilo-green">
+              Playing from {currentTrack.providerName}
+            </p>
+            {currentTrack.providerId === 'youtube' && (
+              <button
+                onClick={() => setShowVideo(!showVideo)}
+                className="flex items-center space-x-1 px-2 py-0.5 rounded-full bg-red-950/80 border border-red-500/40 text-[10px] font-semibold text-red-400 hover:bg-red-900/50 transition-colors"
+              >
+                <Tv className="w-3 h-3" />
+                <span>{showVideo ? 'Audio' : 'Video'}</span>
+              </button>
+            )}
+          </div>
           <p className="text-xs text-tavilo-text-secondary truncate max-w-[200px]">
             {currentTrack.album}
           </p>
@@ -125,15 +138,24 @@ export function FullScreenPlayer({ onOpenTuneMix }: FullScreenPlayerProps) {
           {/* Subtle Ambient Behind Glow */}
           <div className="absolute -inset-4 bg-gradient-to-tr from-tavilo-green/20 to-tavilo-violet/20 blur-2xl -z-10" />
 
-          <Image
-            src={currentTrack.artwork}
-            alt={currentTrack.title}
-            fill
-            sizes="380px"
-            className="object-cover"
-            priority
-            unoptimized
-          />
+          {showVideo && currentTrack.providerId === 'youtube' ? (
+            <iframe
+              src={`https://www.youtube-nocookie.com/embed/${currentTrack.streamUrl}?autoplay=1&playsinline=1`}
+              className="w-full h-full border-0 rounded-3xl"
+              allow="autoplay; encrypted-media; picture-in-picture"
+              allowFullScreen
+            />
+          ) : (
+            <Image
+              src={currentTrack.artwork}
+              alt={currentTrack.title}
+              fill
+              sizes="380px"
+              className="object-cover"
+              priority
+              unoptimized
+            />
+          )}
 
           {/* Equalizer animation badge */}
           {isPlaying && (

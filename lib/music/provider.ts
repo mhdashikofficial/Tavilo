@@ -2,6 +2,7 @@ import { Track, SearchResult, Playlist, Artist, Album, UserPreferences } from '@
 import { SEED_TRACKS, CURATED_PLAYLISTS, MOOD_CATEGORIES } from './seed';
 import { fetchAudiusTrending, searchAudiusTracks, fetchAudiusTrackById, fetchAudiusTrendingByGenre } from './audius';
 import { searchJamendo, isJamendoConfigured } from './jamendo';
+import { searchYouTube } from './youtube';
 import { getSonicProfileForTrack } from '@/lib/recommendations/sonicGraph';
 
 export class MusicProviderService {
@@ -53,6 +54,12 @@ export class MusicProviderService {
       }
     }
 
+    // 5. Query YouTube for similar tracks and artists
+    queries.push(searchYouTube(`${currentTrack.artist} songs`, 8));
+    if (profile.searchSeeds && profile.searchSeeds.length > 0) {
+      queries.push(searchYouTube(`${profile.searchSeeds[0]} music`, 8));
+    }
+
     // Execute parallel retrieval
     const settled = await Promise.allSettled(queries);
     const liveTracks: Track[] = [];
@@ -95,7 +102,15 @@ export class MusicProviderService {
       return { tracks: [], artists: [], albums: [], playlists: [] };
     }
 
-    // 1. Search local seed tracks
+    // 1. Search YouTube catalog
+    let youtubeResults: Track[] = [];
+    try {
+      youtubeResults = await searchYouTube(query, limit);
+    } catch (err) {
+      console.warn('YouTube search error:', err);
+    }
+
+    // 2. Search local seed tracks
     const matchedSeedTracks = SEED_TRACKS.filter(t => 
       t.title.toLowerCase().includes(qLower) ||
       t.artist.toLowerCase().includes(qLower) ||
@@ -104,7 +119,7 @@ export class MusicProviderService {
       t.moods?.some(m => m.toLowerCase().includes(qLower))
     );
 
-    // 2. Search Audius live catalog
+    // 3. Search Audius live catalog
     let audiusResults: Track[] = [];
     try {
       audiusResults = await searchAudiusTracks(query, limit);
@@ -112,7 +127,7 @@ export class MusicProviderService {
       console.warn('Audius search error:', err);
     }
 
-    // 3. Search Jamendo if configured
+    // 4. Search Jamendo if configured
     let jamendoResults: Track[] = [];
     if (isJamendoConfigured()) {
       try {
@@ -124,7 +139,7 @@ export class MusicProviderService {
 
     // Deduplicate tracks by id and title+artist
     const trackMap = new Map<string, Track>();
-    for (const t of [...matchedSeedTracks, ...audiusResults, ...jamendoResults]) {
+    for (const t of [...youtubeResults, ...matchedSeedTracks, ...audiusResults, ...jamendoResults]) {
       const key = `${t.title.toLowerCase()} - ${t.artist.toLowerCase()}`;
       if (!trackMap.has(key)) {
         trackMap.set(key, t);
