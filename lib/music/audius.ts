@@ -26,7 +26,7 @@ export function normalizeAudiusTrack(raw: AudiusRawTrack): Track {
     raw.artwork?.['480x480'] ||
     raw.artwork?.['1000x1000'] ||
     raw.artwork?.['150x150'] ||
-    'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=800&auto=format&fit=crop&q=80';
+    'https://i.ytimg.com/vi/60ItHLz5WEA/hqdefault.jpg';
 
   const genre = raw.genre || 'Indie';
   const moods: string[] = [];

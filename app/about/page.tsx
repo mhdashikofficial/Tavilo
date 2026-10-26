@@ -105,19 +105,19 @@ export default function AboutPage() {
 
             <div className="p-4 rounded-2xl bg-tavilo-card border border-tavilo-border space-y-2">
               <div className="flex items-center justify-between">
-                <span className="font-bold text-sm text-white">Unsplash Photography</span>
+                <span className="font-bold text-sm text-white">YouTube Music Catalog</span>
                 <a
-                  href="https://unsplash.com"
+                  href="https://www.youtube.com/t/terms"
                   target="_blank"
                   rel="noreferrer"
                   className="text-tavilo-green hover:underline text-xs flex items-center space-x-1"
                 >
-                  <span>License</span>
+                  <span>Terms</span>
                   <ExternalLink className="w-3 h-3" />
                 </a>
               </div>
               <p className="text-xs text-tavilo-text-secondary">
-                High-resolution album artwork and category covers provided under the Unsplash License.
+                Official YouTube embedded playback, video metadata, and official high-resolution album artwork.
               </p>
             </div>
           </div>

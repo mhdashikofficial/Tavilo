@@ -42,7 +42,7 @@ export function normalizeJamendoTrack(raw: JamendoRawTrack): Track {
     artist: raw.artist_name || 'Unknown Artist',
     artists: [raw.artist_name],
     album: raw.album_name || 'Single',
-    artwork: raw.image || 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=800&auto=format&fit=crop&q=80',
+    artwork: raw.image || 'https://i.ytimg.com/vi/60ItHLz5WEA/hqdefault.jpg',
     duration: raw.duration || 180,
     streamUrl: raw.audio,
     genre: primaryGenre,

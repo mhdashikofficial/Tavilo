@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic';
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const category = (searchParams.get('category') || 'all') as 'malayalam' | 'english' | 'all';
+    const category = (searchParams.get('category') || 'all') as 'malayalam' | 'english' | 'viral' | 'all';
     const limit = parseInt(searchParams.get('limit') || '12', 10);
 
     const tracks = await MusicProviderService.getTrendingByCategory(category, limit);

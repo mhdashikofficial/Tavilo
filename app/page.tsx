@@ -15,6 +15,8 @@ import {
   Globe,
   Radio,
   Shuffle,
+  Heart,
+  Zap,
 } from 'lucide-react';
 import { TopBar } from '@/components/navigation/TopBar';
 import { TrackCard } from '@/components/music/TrackCard';
@@ -34,10 +36,12 @@ export default function HomePage() {
 
   const [malayalamTracks, setMalayalamTracks] = useState<Track[]>([]);
   const [englishTracks, setEnglishTracks] = useState<Track[]>([]);
+  const [viralTracks, setViralTracks] = useState<Track[]>([]);
   const [recommendedTracks, setRecommendedTracks] = useState<Track[]>([]);
   const [isLoadingMalayalam, setIsLoadingMalayalam] = useState<boolean>(true);
   const [isLoadingEnglish, setIsLoadingEnglish] = useState<boolean>(true);
-  const [activeCategory, setActiveCategory] = useState<'all' | 'malayalam' | 'english' | 'foryou'>('all');
+  const [isLoadingViral, setIsLoadingViral] = useState<boolean>(true);
+  const [activeCategory, setActiveCategory] = useState<'all' | 'malayalam' | 'english' | 'viral' | 'foryou'>('all');
   const [isTuneMixOpen, setTuneMixOpen] = useState<boolean>(false);
 
   // Fetch Malayalam Trending from YouTube
@@ -57,7 +61,7 @@ export default function HomePage() {
         console.warn('Could not fetch Malayalam trending:', err);
       }
       if (isMounted) {
-        setMalayalamTracks(SEED_TRACKS.slice(0, 6));
+        setMalayalamTracks(SEED_TRACKS.filter((t) => t.genre === 'Malayalam'));
       }
     }
 
@@ -87,7 +91,7 @@ export default function HomePage() {
         console.warn('Could not fetch English trending:', err);
       }
       if (isMounted) {
-        setEnglishTracks(SEED_TRACKS.slice(0, 6));
+        setEnglishTracks(SEED_TRACKS.filter((t) => t.genre !== 'Malayalam'));
       }
     }
 
@@ -100,9 +104,39 @@ export default function HomePage() {
     };
   }, []);
 
+  // Fetch Viral & Trending from YouTube
+  useEffect(() => {
+    let isMounted = true;
+    async function loadViral() {
+      try {
+        const res = await fetch('/api/trending?category=viral&limit=12');
+        if (res.ok) {
+          const data = await res.json();
+          if (isMounted && data.tracks && data.tracks.length > 0) {
+            setViralTracks(data.tracks);
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn('Could not fetch Viral trending:', err);
+      }
+      if (isMounted) {
+        setViralTracks(SEED_TRACKS.slice(0, 6));
+      }
+    }
+
+    loadViral().finally(() => {
+      if (isMounted) setIsLoadingViral(false);
+    });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   // Compute Made For You recommendations
   useEffect(() => {
-    const pool = [...englishTracks, ...malayalamTracks, ...SEED_TRACKS];
+    const pool = [...englishTracks, ...malayalamTracks, ...viralTracks, ...SEED_TRACKS];
     if (pool.length > 0) {
       const recs = RecommendationEngine.generateRecommendationQueue(
         pool,
@@ -112,17 +146,20 @@ export default function HomePage() {
       );
       setRecommendedTracks(recs);
     }
-  }, [englishTracks, malayalamTracks, preferences]);
+  }, [englishTracks, malayalamTracks, viralTracks, preferences]);
 
   const greeting = getTimeGreeting();
 
-  // Quick Playlists (Liked songs + Curated)
+  // Quick Items (Liked songs badge + Curated Playlists with YouTube thumbnails)
   const quickItems = [
     {
       id: 'liked-quick',
       title: 'Liked Songs',
       count: `${likedTracks.length} tracks`,
-      artwork: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=800&auto=format&fit=crop&q=80',
+      artwork: likedTracks.length > 0 && likedTracks[0].artwork
+        ? likedTracks[0].artwork
+        : 'https://i.ytimg.com/vi/60ItHLz5WEA/hqdefault.jpg',
+      isLiked: true,
       action: () => {
         if (likedTracks.length > 0) {
           playTrack(likedTracks[0], likedTracks.slice(1));
@@ -134,6 +171,7 @@ export default function HomePage() {
       title: pl.title,
       count: `${pl.trackCount} tracks`,
       artwork: pl.artwork,
+      isLiked: false,
       action: () => {
         if (pl.tracks.length > 0) {
           playTrack(pl.tracks[0], pl.tracks.slice(1));
@@ -159,44 +197,31 @@ export default function HomePage() {
           <div className="absolute bottom-0 right-1/4 -mb-10 w-64 h-64 bg-tavilo-violet/10 rounded-full blur-3xl pointer-events-none" />
 
           <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-            <div className="max-w-xl">
-              <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-tavilo-green/10 border border-tavilo-green/20 text-tavilo-green text-xs font-semibold mb-3">
-                <Sparkles className="w-3.5 h-3.5" />
-                <span>Your Sound. Your World.</span>
+            <div>
+              <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-tavilo-surface/80 border border-tavilo-green/30 text-[11px] font-bold text-tavilo-green mb-3">
+                <span className="w-2 h-2 rounded-full bg-tavilo-green animate-pulse" />
+                <span>YOUTUBE MUSIC STREAMING</span>
               </div>
-              <h1 className="text-2xl sm:text-4xl font-extrabold text-white tracking-tight">
+              <h1 className="text-2xl sm:text-4xl lg:text-5xl font-black text-white tracking-tight">
                 {greeting}
               </h1>
-              <p className="text-sm sm:text-base text-tavilo-text-secondary mt-2">
-                Latest trending hits from YouTube Music, personalized taste flow, and high-fidelity discovery.
+              <p className="text-xs sm:text-sm text-tavilo-text-secondary mt-2 max-w-xl">
+                Real YouTube hits, intelligent auto-discovery, and zero ads. Your sound. Your world.
               </p>
             </div>
 
-            <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center space-x-3 self-start md:self-auto">
               <button
                 onClick={() => setTuneMixOpen(true)}
-                className="flex items-center space-x-2 px-4 py-2.5 rounded-xl bg-tavilo-surface border border-tavilo-violet/40 text-tavilo-violet font-semibold text-xs sm:text-sm hover:bg-tavilo-violet/15 transition-all shadow-sm"
+                className="flex items-center space-x-2 px-4 py-2.5 rounded-2xl bg-tavilo-card hover:bg-tavilo-surface border border-tavilo-border text-white text-xs font-semibold transition-all shadow-md"
               >
-                <Sliders className="w-4 h-4" />
-                <span>Tune My Mix</span>
-              </button>
-
-              <button
-                onClick={() => {
-                  const pool = recommendedTracks.length > 0 ? recommendedTracks : englishTracks;
-                  if (pool.length > 0) {
-                    playTrack(pool[0], pool.slice(1));
-                  }
-                }}
-                className="flex items-center space-x-2 px-5 py-2.5 rounded-xl bg-tavilo-green text-black font-bold text-xs sm:text-sm hover:bg-[#00c985] transition-all shadow-lg shadow-tavilo-green/20"
-              >
-                <Play className="w-4 h-4 fill-current ml-0.5" />
-                <span>Daily Mix</span>
+                <Sliders className="w-3.5 h-3.5 text-tavilo-violet" />
+                <span>Tune Mix: {preferences.tuneMixMode}</span>
               </button>
             </div>
           </div>
 
-          {/* Quick Access Grid */}
+          {/* Quick Shortcuts Bar */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mt-8">
             {quickItems.map((item) => (
               <div
@@ -205,14 +230,20 @@ export default function HomePage() {
                 className="group flex items-center bg-white/5 hover:bg-white/10 rounded-xl overflow-hidden border border-white/5 hover:border-tavilo-green/30 transition-all cursor-pointer shadow-md"
               >
                 <div className="relative w-14 h-14 sm:w-16 sm:h-16 flex-shrink-0 bg-black/40">
-                  <Image
-                    src={item.artwork}
-                    alt={item.title}
-                    fill
-                    sizes="64px"
-                    className="object-cover"
-                    unoptimized
-                  />
+                  {item.isLiked ? (
+                    <div className="w-full h-full bg-gradient-to-br from-tavilo-green to-emerald-900 flex items-center justify-center text-black">
+                      <Heart className="w-6 h-6 fill-current" />
+                    </div>
+                  ) : (
+                    <Image
+                      src={item.artwork}
+                      alt={item.title}
+                      fill
+                      sizes="64px"
+                      className="object-cover"
+                      unoptimized
+                    />
+                  )}
                 </div>
                 <div className="px-3 min-w-0 flex-1">
                   <p className="font-semibold text-xs sm:text-sm text-white group-hover:text-tavilo-green truncate transition-colors">
@@ -233,6 +264,7 @@ export default function HomePage() {
             { id: 'all', label: 'All Music' },
             { id: 'malayalam', label: '🌴 Malayalam Hits' },
             { id: 'english', label: '🌍 Global English' },
+            { id: 'viral', label: '🔥 Viral Bangers' },
             { id: 'foryou', label: '✨ Made For You' },
           ].map((cat) => (
             <button
@@ -376,6 +408,69 @@ export default function HomePage() {
           </section>
         )}
 
+        {/* Section: Trending Viral Bangers (YouTube Music) */}
+        {(activeCategory === 'all' || activeCategory === 'viral') && (
+          <section className="space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center space-x-3">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-rose-600 to-amber-600 flex items-center justify-center text-white shadow-md">
+                  <Zap className="w-5 h-5 fill-current" />
+                </div>
+                <div>
+                  <div className="flex items-center space-x-2">
+                    <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight">
+                      Trending Viral Bangers
+                    </h2>
+                    <span className="px-2 py-0.5 rounded-full bg-red-950/70 border border-red-500/30 text-[10px] font-bold text-red-400 uppercase tracking-wide">
+                      YouTube Trending
+                    </span>
+                  </div>
+                  <p className="text-xs text-tavilo-text-secondary">
+                    South Indian sensations, high-energy cinema drops, and trending reels
+                  </p>
+                </div>
+              </div>
+
+              {viralTracks.length > 0 && (
+                <div className="flex items-center space-x-2 self-start sm:self-auto">
+                  <button
+                    onClick={() => handlePlayCategory(viralTracks, false)}
+                    className="flex items-center space-x-1.5 px-4 py-2 rounded-full bg-tavilo-green text-black text-xs font-bold hover:bg-[#00c985] transition-all shadow-md"
+                  >
+                    <Play className="w-3.5 h-3.5 fill-current" />
+                    <span>Play All</span>
+                  </button>
+                  <button
+                    onClick={() => handlePlayCategory(viralTracks, true)}
+                    className="p-2 rounded-full bg-tavilo-card hover:bg-tavilo-surface border border-tavilo-border text-white transition-colors"
+                    title="Shuffle Viral"
+                  >
+                    <Shuffle className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {isLoadingViral ? (
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 sm:gap-4">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <div key={i} className="aspect-square rounded-2xl bg-tavilo-card animate-pulse" />
+                ))}
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 sm:gap-4">
+                {viralTracks.map((track) => (
+                  <TrackCard
+                    key={track.id}
+                    track={track}
+                    queueContext={viralTracks}
+                  />
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+
         {/* Section: Made For You */}
         {(activeCategory === 'all' || activeCategory === 'foryou') && (
           <section>
@@ -422,9 +517,14 @@ export default function HomePage() {
                 <div className="p-1.5 rounded-lg bg-emerald-500/20 text-tavilo-green">
                   <Compass className="w-4 h-4" />
                 </div>
-                <h2 className="text-lg sm:text-xl font-bold text-white tracking-tight">
-                  Moods & Activities
-                </h2>
+                <div>
+                  <h2 className="text-lg sm:text-xl font-bold text-white tracking-tight">
+                    Moods & Activities
+                  </h2>
+                  <p className="text-xs text-tavilo-text-secondary">
+                    Explore curated YouTube music tailored for every vibe and moment
+                  </p>
+                </div>
               </div>
             </div>
 
@@ -468,19 +568,24 @@ export default function HomePage() {
           </section>
         )}
 
-        {/* Section: Curated Playlists */}
+        {/* Section: Curated Playlists (YouTube Music) */}
         {activeCategory === 'all' && (
           <section>
             <div className="flex items-center space-x-2.5 mb-4">
               <div className="p-1.5 rounded-lg bg-purple-500/20 text-purple-400">
                 <Headphones className="w-4 h-4" />
               </div>
-              <h2 className="text-lg sm:text-xl font-bold text-white tracking-tight">
-                Curated Collections
-              </h2>
+              <div>
+                <h2 className="text-lg sm:text-xl font-bold text-white tracking-tight">
+                  Curated YouTube Collections
+                </h2>
+                <p className="text-xs text-tavilo-text-secondary">
+                  Hand-crafted thematic playlists featuring iconic YouTube hits
+                </p>
+              </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               {CURATED_PLAYLISTS.map((pl) => (
                 <Link
                   key={pl.id}
@@ -492,12 +597,12 @@ export default function HomePage() {
                       src={pl.artwork}
                       alt={pl.title}
                       fill
-                      sizes="(max-width: 640px) 100vw, 33vw"
+                      sizes="(max-width: 640px) 100vw, 25vw"
                       className="object-cover group-hover:scale-105 transition-transform duration-500"
                       unoptimized
                     />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent flex items-end p-3">
-                      <span className="text-xs font-semibold text-tavilo-green bg-black/60 px-2 py-0.5 rounded-full border border-tavilo-green/30">
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent flex items-end p-3">
+                      <span className="text-xs font-semibold text-tavilo-green bg-black/70 px-2 py-0.5 rounded-full border border-tavilo-green/30">
                         {pl.trackCount} Tracks
                       </span>
                     </div>
@@ -520,7 +625,7 @@ export default function HomePage() {
             Tavilo — Developed by Ash © 2026
           </p>
           <p className="text-[11px] text-tavilo-text-muted max-w-md mx-auto">
-            Powered by YouTube Music, Audius Open Network, Jamendo API, and Tavilo Smart Autoplay recommendation algorithms.
+            Powered by YouTube Music Catalog, official embedded playback, and Tavilo Smart Autoplay recommendation algorithms.
           </p>
           <div className="flex justify-center space-x-4 text-xs text-tavilo-green pt-1">
             <Link href="/about" className="hover:underline">About & Licensing</Link>

@@ -7,27 +7,28 @@ import { getSonicProfileForTrack } from '@/lib/recommendations/sonicGraph';
 
 export class MusicProviderService {
   /**
-   * Returns trending tracks (combining Audius live trending + curated high quality catalog)
+   * Returns trending tracks (combining YouTube live trending + curated high quality catalog)
    */
   public static async getTrending(limit: number = 24): Promise<Track[]> {
     try {
-      const audiusTracks = await fetchAudiusTrending(limit);
-      if (audiusTracks.length > 0) {
-        // Interleave top seed tracks to ensure diverse instant audio
-        const combined = [...SEED_TRACKS.slice(0, 4), ...audiusTracks];
-        return combined.slice(0, limit);
-      }
+      const half = Math.ceil(limit / 2);
+      const [mal, eng] = await Promise.all([
+        searchYouTube('latest trending malayalam songs official video', half),
+        searchYouTube('trending english songs billboard hot official video', half),
+      ]);
+      const blended = [...mal, ...eng];
+      if (blended.length > 0) return blended.slice(0, limit);
     } catch (err) {
       console.warn('Error fetching live trending, falling back to seed catalog:', err);
     }
-    return SEED_TRACKS;
+    return SEED_TRACKS.slice(0, limit);
   }
 
   /**
-   * Returns trending tracks categorized by Malayalam, English, or global blend from YouTube
+   * Returns trending tracks categorized by Malayalam, English, Viral, or global blend from YouTube
    */
   public static async getTrendingByCategory(
-    category: 'malayalam' | 'english' | 'all' = 'all',
+    category: 'malayalam' | 'english' | 'viral' | 'all' = 'all',
     limit: number = 12
   ): Promise<Track[]> {
     try {
@@ -37,13 +38,17 @@ export class MusicProviderService {
       } else if (category === 'english') {
         const yt = await searchYouTube('trending english songs billboard hot official video', limit);
         if (yt.length > 0) return yt;
+      } else if (category === 'viral') {
+        const yt = await searchYouTube('trending viral songs anirudh south indian bollywood official video', limit);
+        if (yt.length > 0) return yt;
       } else {
-        const half = Math.ceil(limit / 2);
-        const [mal, eng] = await Promise.all([
-          searchYouTube('latest trending malayalam songs official video', half),
-          searchYouTube('trending english songs billboard hot official video', half),
+        const third = Math.ceil(limit / 3);
+        const [mal, eng, vir] = await Promise.all([
+          searchYouTube('latest trending malayalam songs official video', third),
+          searchYouTube('trending english songs billboard hot official video', third),
+          searchYouTube('trending viral songs anirudh south indian bollywood official video', third),
         ]);
-        const blended = [...mal, ...eng];
+        const blended = [...mal, ...eng, ...vir];
         if (blended.length > 0) return blended.slice(0, limit);
       }
     } catch (err) {
@@ -223,25 +228,41 @@ export class MusicProviderService {
   }
 
   /**
-   * Returns tracks for a specific mood category
+   * Returns tracks for a specific mood category powered by YouTube Music
    */
   public static async getTracksByMood(mood: string, limit: number = 20): Promise<Track[]> {
-    const mLower = mood.toLowerCase();
+    const mLower = mood.toLowerCase().trim();
     
+    const MOOD_QUERIES: Record<string, string> = {
+      chill: 'chill lofi beats relaxing songs official video',
+      focus: 'deep focus study instrumental music',
+      workout: 'workout motivation gym workout music songs',
+      sleep: 'deep sleep relaxing ambient music',
+      'night-drive': 'night drive synthwave phonk songs official video',
+      romantic: 'romantic love songs acoustic official video',
+      energetic: 'party dance energetic songs official video',
+      acoustic: 'acoustic guitar singer songwriter songs official video',
+      electronic: 'electronic dance music edm official video',
+      instrumental: 'piano violin instrumental cinematic music',
+    };
+
+    try {
+      const q = MOOD_QUERIES[mLower] || `${mood} music songs official video`;
+      const ytTracks = await searchYouTube(q, limit);
+      if (ytTracks.length > 0) {
+        return ytTracks;
+      }
+    } catch (err) {
+      console.warn('Error fetching YouTube mood tracks:', err);
+    }
+
     // Check seed tracks matching mood
     const seedMatches = SEED_TRACKS.filter(t =>
       t.moods?.some(m => m.toLowerCase().includes(mLower)) ||
       t.genre?.toLowerCase().includes(mLower)
     );
 
-    try {
-      // Query Audius for the mood tag
-      const liveMatches = await searchAudiusTracks(mood, limit);
-      const combined = [...seedMatches, ...liveMatches];
-      return combined.slice(0, limit);
-    } catch {
-      return seedMatches.length > 0 ? seedMatches : SEED_TRACKS.slice(0, limit);
-    }
+    return seedMatches.length > 0 ? seedMatches : SEED_TRACKS.slice(0, limit);
   }
 
   /**
@@ -257,6 +278,25 @@ export class MusicProviderService {
   public static async getTrackById(id: string): Promise<Track | null> {
     const seed = SEED_TRACKS.find(t => t.id === id);
     if (seed) return seed;
+
+    if (id.startsWith('yt-')) {
+      const videoId = id.replace('yt-', '');
+      return {
+        id,
+        providerId: 'youtube',
+        providerName: 'YouTube Music',
+        title: 'YouTube Track',
+        artist: 'YouTube Artist',
+        album: 'YouTube Release',
+        artwork: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+        duration: 210,
+        streamUrl: videoId,
+        playbackCapability: 'playable',
+        playbackSource: 'YouTube Official Embedded Player',
+        licenseName: 'YouTube Standard License',
+        licenseUrl: 'https://www.youtube.com/t/terms',
+      };
+    }
 
     if (id.startsWith('audius-')) {
       return fetchAudiusTrackById(id);

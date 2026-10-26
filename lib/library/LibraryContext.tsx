@@ -8,22 +8,23 @@ const STORAGE_KEY_PREFS = 'tavilo_user_preferences_v1';
 const STORAGE_KEY_PLAYLISTS = 'tavilo_user_playlists_v1';
 
 const DEFAULT_PREFERENCES: UserPreferences = {
-  likedTrackIds: [SEED_TRACKS[0].id, SEED_TRACKS[3].id],
+  likedTrackIds: [SEED_TRACKS[0].id, SEED_TRACKS[1].id],
   dislikedTrackIds: [],
   excludedTrackIds: [],
   excludedArtistNames: [],
-  followedArtistNames: ['Aura Soundscapes', 'Prism Nova'],
+  followedArtistNames: ['Alan Walker', 'Sushin Shyam', 'The Weeknd'],
   savedAlbumIds: [],
-  favoriteGenres: ['Lo-Fi', 'Electronic', 'Acoustic', 'Ambient'],
+  favoriteGenres: ['Malayalam', 'Electronic', 'Pop', 'Soundtrack'],
   genreWeights: {
-    'lo-fi': 3,
-    'electronic': 2,
-    'ambient': 2,
-    'acoustic': 2,
+    'malayalam': 3,
+    'electronic': 3,
+    'pop': 2,
+    'soundtrack': 2,
   },
   artistPlayCounts: {
-    'aura soundscapes': 4,
-    'prism nova': 2,
+    'alan walker': 4,
+    'sushin shyam': 4,
+    'the weeknd': 3,
   },
   recentlyPlayed: [],
   tuneMixMode: 'balanced',
@@ -191,7 +192,7 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
       id: `custom-playlist-${Date.now()}`,
       title,
       description,
-      artwork: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=800&auto=format&fit=crop&q=80',
+      artwork: 'https://i.ytimg.com/vi/60ItHLz5WEA/hqdefault.jpg',
       tracks: [],
       trackCount: 0,
       createdAt: new Date().toISOString(),
@@ -220,6 +221,7 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
         const newTracks = [...p.tracks, track];
         return {
           ...p,
+          artwork: p.tracks.length === 0 ? track.artwork : p.artwork,
           tracks: newTracks,
           trackCount: newTracks.length,
           updatedAt: new Date().toISOString(),
