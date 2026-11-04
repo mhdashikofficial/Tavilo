@@ -19,10 +19,12 @@ import {
 } from 'lucide-react';
 import { TopBar } from '@/components/navigation/TopBar';
 import { useLibrary } from '@/lib/library/LibraryContext';
+import { usePlayback } from '@/lib/playback/PlaybackContext';
 import { TuneMixModal } from '@/components/tune/TuneMixModal';
 
 export default function ProfilePage() {
   const { preferences, playlists, likedTracks, clearHistory, resetRecommendations } = useLibrary();
+  const { setBackgroundModalOpen, notificationPermission } = usePlayback();
   const [isTuneMixOpen, setTuneMixOpen] = useState(false);
 
   // Top genres from preferences weights
@@ -111,6 +113,44 @@ export default function ProfilePage() {
               </div>
             </div>
           )}
+        </section>
+
+        {/* Android & Vivo Background Playback Setup */}
+        <section className="p-6 rounded-2xl bg-tavilo-card border border-tavilo-border space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2.5">
+              <div className="p-2 rounded-xl bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                <Smartphone className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 className="text-base font-bold text-white">Android & Vivo Background Audio</h2>
+                <p className="text-xs text-tavilo-text-secondary">
+                  Configure lock screen notifications and battery consumption rules
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setBackgroundModalOpen(true)}
+              className="px-4 py-2 rounded-xl bg-tavilo-surface border border-emerald-500/40 text-emerald-400 text-xs font-semibold hover:bg-emerald-500/20 transition-colors shadow-sm"
+            >
+              Configure
+            </button>
+          </div>
+
+          <div className="p-3.5 rounded-xl bg-black/30 border border-white/5 space-y-2 text-xs text-tavilo-text-secondary">
+            <p>
+              On aggressive battery-saving systems (like <strong className="text-white">Vivo Funtouch OS / OriginOS</strong>, Xiaomi MIUI, and Samsung One UI), background playback stops after 5 seconds unless high background power consumption is allowed.
+            </p>
+            <div className="flex flex-wrap gap-2 pt-1">
+              <span className="px-2.5 py-1 rounded-full bg-emerald-950/80 text-emerald-400 border border-emerald-500/30 text-[11px] font-medium">
+                High-Priority AudioTrack: Active
+              </span>
+              <span className="px-2.5 py-1 rounded-full bg-tavilo-surface text-tavilo-text-primary border border-white/10 text-[11px] font-medium">
+                Notification Status: {notificationPermission}
+              </span>
+            </div>
+          </div>
         </section>
 
         {/* Data & History Controls */}

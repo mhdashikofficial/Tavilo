@@ -3,7 +3,8 @@
 import React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ChevronLeft, ChevronRight, Sliders, Info, Sparkles } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Sliders, Info, Sparkles, Smartphone } from 'lucide-react';
+import { usePlayback } from '@/lib/playback/PlaybackContext';
 
 interface TopBarProps {
   onOpenTuneMix?: () => void;
@@ -12,6 +13,7 @@ interface TopBarProps {
 
 export function TopBar({ onOpenTuneMix, title }: TopBarProps) {
   const router = useRouter();
+  const { setBackgroundModalOpen } = usePlayback();
 
   return (
     <header className="sticky top-0 z-20 h-16 bg-tavilo-bg/85 backdrop-blur-md border-b border-tavilo-border/50 px-4 sm:px-8 flex items-center justify-between">
@@ -50,6 +52,15 @@ export function TopBar({ onOpenTuneMix, title }: TopBarProps) {
             <span className="hidden sm:inline">Tune My Mix</span>
           </button>
         )}
+
+        <button
+          onClick={() => setBackgroundModalOpen(true)}
+          title="Vivo & Android Background Playback Fix"
+          className="flex items-center space-x-1.5 px-3 py-1.5 rounded-full bg-tavilo-surface border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/15 text-xs font-semibold transition-colors shadow-sm"
+        >
+          <Smartphone className="w-3.5 h-3.5" />
+          <span className="hidden sm:inline">Vivo/Android Fix</span>
+        </button>
 
         <Link
           href="/about"

@@ -52,6 +52,11 @@ interface PlaybackContextType {
   clearQueue: () => void;
   setFullScreenOpen: (open: boolean) => void;
   setQueueOpen: (open: boolean) => void;
+  isBackgroundModalOpen: boolean;
+  setBackgroundModalOpen: (open: boolean) => void;
+  notificationPermission: NotificationPermission | 'unsupported';
+  requestNotificationPermission: () => Promise<boolean>;
+  enableWebAudioKeepAlive: () => void;
 }
 
 const SILENT_AUDIO_URI =
@@ -77,6 +82,12 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
 
   const [isFullScreenOpen, setFullScreenOpen] = useState<boolean>(false);
   const [isQueueOpen, setQueueOpen] = useState<boolean>(false);
+  const [isBackgroundModalOpen, setBackgroundModalOpen] = useState<boolean>(false);
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | 'unsupported'>('default');
+
+  // Web Audio keep-alive reference to prevent Android OS audio track suspension
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const keepAliveBufferSourceRef = useRef<AudioBufferSourceNode | null>(null);
 
   // Hidden audio element reference for direct streams & silent background audio anchor
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -120,6 +131,97 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
         await wakeLockRef.current.release();
       } catch {}
       wakeLockRef.current = null;
+    }
+  }, []);
+
+  // Check initial notification permission on client
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      setNotificationPermission(Notification.permission);
+    } else {
+      setNotificationPermission('unsupported');
+    }
+  }, []);
+
+  // Web Audio keep-alive: keeps AudioTrack hardware pipeline awake in Android JNI
+  const enableWebAudioKeepAlive = useCallback(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtx) return;
+
+      if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') {
+        audioCtxRef.current = new AudioCtx();
+      }
+
+      if (audioCtxRef.current.state === 'suspended') {
+        audioCtxRef.current.resume();
+      }
+
+      if (keepAliveBufferSourceRef.current) {
+        try {
+          keepAliveBufferSourceRef.current.stop();
+          keepAliveBufferSourceRef.current.disconnect();
+        } catch {}
+        keepAliveBufferSourceRef.current = null;
+      }
+
+      const sampleRate = audioCtxRef.current.sampleRate || 44100;
+      const buffer = audioCtxRef.current.createBuffer(1, sampleRate, sampleRate);
+      const source = audioCtxRef.current.createBufferSource();
+      source.buffer = buffer;
+      source.loop = true;
+
+      const gainNode = audioCtxRef.current.createGain();
+      // Ultra-low non-zero gain keeps audio bus pipeline active without audible noise
+      gainNode.gain.setValueAtTime(0.0001, audioCtxRef.current.currentTime);
+
+      source.connect(gainNode);
+      gainNode.connect(audioCtxRef.current.destination);
+      source.start(0);
+
+      keepAliveBufferSourceRef.current = source;
+    } catch (err) {
+      console.warn('Web Audio Keep-Alive setup error:', err);
+    }
+  }, []);
+
+  // Request Android Notification permission to keep lock screen media player pinned
+  const requestNotificationPermission = useCallback(async (): Promise<boolean> => {
+    if (typeof window === 'undefined' || !('Notification' in window)) {
+      return false;
+    }
+    try {
+      const perm = await Notification.requestPermission();
+      setNotificationPermission(perm);
+      if (perm === 'granted') {
+        if ('serviceWorker' in navigator && navigator.serviceWorker.ready) {
+          try {
+            const reg = await navigator.serviceWorker.ready;
+            reg.showNotification('🎵 Tavilo Background Audio Active', {
+              body: 'Background audio & lock-screen playback unlocked. Music will keep playing with screen turned off.',
+              icon: '/icons/icon-192.png',
+              badge: '/icons/icon-192.png',
+              tag: 'tavilo-playback-ready',
+            });
+          } catch {
+            new Notification('🎵 Tavilo Background Audio Active', {
+              body: 'Background audio & lock-screen playback unlocked. Music will keep playing with screen turned off.',
+              icon: '/icons/icon-192.png',
+            });
+          }
+        } else {
+          new Notification('🎵 Tavilo Background Audio Active', {
+            body: 'Background audio & lock-screen playback unlocked. Music will keep playing with screen turned off.',
+            icon: '/icons/icon-192.png',
+          });
+        }
+        return true;
+      }
+      return false;
+    } catch (err) {
+      console.warn('Failed to request notification permission:', err);
+      return false;
     }
   }, []);
 
@@ -414,14 +516,15 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
       if (document.visibilityState === 'hidden') {
         // Device screen turned off or user switched apps
         if (isPlaying && !isUserPausedRef.current) {
-          // Keep audio anchor running so Android AudioFocus is retained
+          enableWebAudioKeepAlive();
+          // Keep audio anchor running with full volume (0-PCM silent WAV) so Android AudioFocus and AudioTrack remain active
           if (audioRef.current && audioRef.current.paused) {
             try {
               audioRef.current.loop = true;
               if (audioRef.current.src !== SILENT_AUDIO_URI) {
                 audioRef.current.src = SILENT_AUDIO_URI;
               }
-              audioRef.current.volume = 0.001;
+              audioRef.current.volume = 1.0;
               audioRef.current.play().catch(() => {});
             } catch {}
           }
@@ -452,7 +555,7 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [isPlaying, currentTrack]);
+  }, [isPlaying, currentTrack, enableWebAudioKeepAlive]);
 
   // YouTube polling for currentTime & duration during playback
   useEffect(() => {
@@ -584,15 +687,16 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
       // Check whether track is a YouTube video or an audio stream
       if (track.providerId === 'youtube') {
         isUserPausedRef.current = false;
+        enableWebAudioKeepAlive();
 
-        // Loop the silent audio anchor on HTML5 audio element so Android grants continuous AudioFocus in background/screen-off
+        // Loop the silent audio anchor on HTML5 audio element with volume 1.0 (pure silence 0-PCM WAV) so Android gives full AudioFocus in background/screen-off
         if (audioRef.current) {
           try {
             audioRef.current.loop = true;
             if (audioRef.current.src !== SILENT_AUDIO_URI) {
               audioRef.current.src = SILENT_AUDIO_URI;
             }
-            audioRef.current.volume = 0.001;
+            audioRef.current.volume = 1.0;
             audioRef.current.play().catch(() => {});
           } catch {}
         }
@@ -641,7 +745,7 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
         }
       }
     },
-    [finalizeCurrentPlaySession, preferences, requestWakeLock, volume]
+    [finalizeCurrentPlaySession, preferences, requestWakeLock, volume, enableWebAudioKeepAlive]
   );
 
   const togglePlay = () => {
@@ -665,6 +769,13 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
     if (audioRef.current) {
       audioRef.current.pause();
     }
+    if (keepAliveBufferSourceRef.current) {
+      try {
+        keepAliveBufferSourceRef.current.stop();
+        keepAliveBufferSourceRef.current.disconnect();
+      } catch {}
+      keepAliveBufferSourceRef.current = null;
+    }
     setIsPlaying(false);
     releaseWakeLock();
     if ('mediaSession' in navigator) {
@@ -674,6 +785,7 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
 
   const resume = () => {
     isUserPausedRef.current = false;
+    enableWebAudioKeepAlive();
     if (currentTrack?.providerId === 'youtube') {
       if (ytPlayerRef.current && isYtReadyRef.current) {
         try {
@@ -686,7 +798,7 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
           if (audioRef.current.src !== SILENT_AUDIO_URI) {
             audioRef.current.src = SILENT_AUDIO_URI;
           }
-          audioRef.current.volume = 0.001;
+          audioRef.current.volume = 1.0;
           audioRef.current.play().catch(() => {});
         } catch {}
       }
@@ -890,6 +1002,11 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
         clearQueue,
         setFullScreenOpen,
         setQueueOpen,
+        isBackgroundModalOpen,
+        setBackgroundModalOpen,
+        notificationPermission,
+        requestNotificationPermission,
+        enableWebAudioKeepAlive,
       }}
     >
       {children}

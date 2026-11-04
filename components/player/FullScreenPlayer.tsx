@@ -20,6 +20,7 @@ import {
   Sliders,
   Check,
   Tv,
+  Smartphone,
 } from 'lucide-react';
 import { usePlayback } from '@/lib/playback/PlaybackContext';
 import { useLibrary } from '@/lib/library/LibraryContext';
@@ -51,6 +52,7 @@ export function FullScreenPlayer({ onOpenTuneMix }: FullScreenPlayerProps) {
     setFullScreenOpen,
     setQueueOpen,
     isQueueOpen,
+    setBackgroundModalOpen,
   } = usePlayback();
 
   const { isLiked, toggleLike, dislikeTrack } = useLibrary();
@@ -114,21 +116,32 @@ export function FullScreenPlayer({ onOpenTuneMix }: FullScreenPlayerProps) {
           </p>
         </div>
 
-        <button
-          onClick={() => {
-            setFullScreenOpen(false);
-            setQueueOpen(true);
-          }}
-          aria-label="View Queue"
-          className={cn(
-            'p-2.5 rounded-full transition-colors',
-            isQueueOpen
-              ? 'bg-tavilo-green text-black'
-              : 'bg-white/5 hover:bg-white/10 text-tavilo-text-secondary hover:text-white'
-          )}
-        >
-          <ListMusic className="w-5 h-5" />
-        </button>
+        <div className="flex items-center space-x-2">
+          <button
+            onClick={() => setBackgroundModalOpen(true)}
+            title="Vivo & Android Screen-Off Background Audio Fix"
+            aria-label="Background audio fix"
+            className="p-2.5 rounded-full bg-emerald-950/60 border border-emerald-500/40 text-emerald-400 hover:bg-emerald-900/50 hover:text-white transition-colors"
+          >
+            <Smartphone className="w-5 h-5" />
+          </button>
+
+          <button
+            onClick={() => {
+              setFullScreenOpen(false);
+              setQueueOpen(true);
+            }}
+            aria-label="View Queue"
+            className={cn(
+              'p-2.5 rounded-full transition-colors',
+              isQueueOpen
+                ? 'bg-tavilo-green text-black'
+                : 'bg-white/5 hover:bg-white/10 text-tavilo-text-secondary hover:text-white'
+            )}
+          >
+            <ListMusic className="w-5 h-5" />
+          </button>
+        </div>
       </div>
 
       {/* Main Content: Large Artwork & Visualizer */}

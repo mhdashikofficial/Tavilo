@@ -7,10 +7,13 @@ import { MiniPlayer } from '@/components/player/MiniPlayer';
 import { FullScreenPlayer } from '@/components/player/FullScreenPlayer';
 import { QueueModal } from '@/components/player/QueueModal';
 import { TuneMixModal } from '@/components/tune/TuneMixModal';
+import { AndroidBackgroundModal } from '@/components/player/AndroidBackgroundModal';
 import { PwaInstallPrompt } from '@/components/pwa/PwaInstallPrompt';
+import { usePlayback } from '@/lib/playback/PlaybackContext';
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [isTuneMixOpen, setTuneMixOpen] = useState(false);
+  const { isBackgroundModalOpen, setBackgroundModalOpen } = usePlayback();
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-tavilo-bg text-tavilo-text-primary antialiased">
@@ -44,6 +47,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <TuneMixModal
         isOpen={isTuneMixOpen}
         onClose={() => setTuneMixOpen(false)}
+      />
+
+      {/* Android & Vivo Background Playback Fix Modal */}
+      <AndroidBackgroundModal
+        isOpen={isBackgroundModalOpen}
+        onClose={() => setBackgroundModalOpen(false)}
       />
     </div>
   );
