@@ -493,20 +493,34 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
                     } catch {}
                   }
 
-                  // Attempt immediate retry in case the browser throttled during screen transition
+                  // Force resume YouTube player immediately
+                  if (ytPlayerRef.current) {
+                    try {
+                      ytPlayerRef.current.playVideo();
+                    } catch {}
+                  }
+
+                  // Verify after 300ms if playback resumed or if browser enforced background pause
                   setTimeout(() => {
                     if (!isUserPausedRef.current && ytPlayerRef.current) {
-                      try {
-                        ytPlayerRef.current.playVideo();
-                      } catch {}
+                      const playerState = ytPlayerRef.current.getPlayerState?.();
+                      if (playerState === 1) {
+                        // Resumed and actively playing in background!
+                        setIsPlaying(true);
+                        if ('mediaSession' in navigator) {
+                          navigator.mediaSession.playbackState = 'playing';
+                        }
+                      } else {
+                        // Browser suspended video decoding in background.
+                        // Set MediaSession to 'paused' so the Android lock-screen and notification shade display the PLAY (▶) button.
+                        // When user taps PLAY on the lock screen / notification, Android passes user gesture to our MediaSession 'play' handler, which immediately resumes playback!
+                        setIsPlaying(false);
+                        if ('mediaSession' in navigator) {
+                          navigator.mediaSession.playbackState = 'paused';
+                        }
+                      }
                     }
-                  }, 250);
-
-                  // Set MediaSession to paused so Android lock-screen widget displays the PLAY (▶) icon (allowing 1-tap lock-screen resume)
-                  if ('mediaSession' in navigator) {
-                    navigator.mediaSession.playbackState = 'paused';
-                  }
-                  setIsPlaying(false);
+                  }, 300);
                 } else {
                   // User explicitly initiated the pause
                   setIsPlaying(false);

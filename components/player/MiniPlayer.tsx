@@ -103,9 +103,10 @@ export function MiniPlayer() {
             onClick={() => setPocketMode(true)}
             title="OLED Pocket Mode — Pure Black Screen & 0% Battery"
             aria-label="Pocket Mode"
-            className="flex p-2 rounded-full text-tavilo-text-muted hover:text-emerald-400 hover:bg-tavilo-surface transition-colors"
+            className="relative flex p-2 rounded-full text-neutral-300 hover:text-emerald-400 hover:bg-tavilo-surface transition-colors"
           >
-            <Moon className="w-4 h-4" />
+            <Moon className="w-4 h-4 text-emerald-400" />
+            <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
           </button>
 
           {/* Queue Button (Desktop) */}

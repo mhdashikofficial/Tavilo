@@ -67,6 +67,41 @@ export default function RootLayout({
       <head>
         <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
         <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+        {/* Anti-Pause & Background Play Fix: Overrides Page Visibility API so embedded players never pause when minimized */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function() {
+                try {
+                  // Intercept visibilitychange in capture phase to suppress background pause triggers
+                  window.addEventListener('visibilitychange', function(e) {
+                    if (document.visibilityState === 'hidden') {
+                      e.stopImmediatePropagation();
+                    }
+                  }, true);
+                  document.addEventListener('visibilitychange', function(e) {
+                    if (document.visibilityState === 'hidden') {
+                      e.stopImmediatePropagation();
+                    }
+                  }, true);
+
+                  // Intercept window blur in capture phase
+                  window.addEventListener('blur', function(e) {
+                    e.stopImmediatePropagation();
+                  }, true);
+
+                  // Override Page Visibility API properties to report always visible
+                  Object.defineProperties(document, {
+                    hidden: { get: function() { return false; }, configurable: true },
+                    visibilityState: { get: function() { return 'visible'; }, configurable: true },
+                    webkitHidden: { get: function() { return false; }, configurable: true },
+                    webkitVisibilityState: { get: function() { return 'visible'; }, configurable: true }
+                  });
+                } catch(e) {}
+              })();
+            `,
+          }}
+        />
       </head>
       <body className="bg-tavilo-bg text-tavilo-text-primary selection:bg-tavilo-green selection:text-black">
         <LibraryProvider>

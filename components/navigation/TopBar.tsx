@@ -56,10 +56,10 @@ export function TopBar({ onOpenTuneMix, title }: TopBarProps) {
         <button
           onClick={() => setBackgroundModalOpen(true)}
           title="Vivo & Android Background Playback Fix"
-          className="flex items-center space-x-1.5 px-3 py-1.5 rounded-full bg-tavilo-surface border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/15 text-xs font-semibold transition-colors shadow-sm"
+          className="flex items-center space-x-1.5 px-2.5 sm:px-3 py-1.5 rounded-full bg-tavilo-surface border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/15 text-xs font-semibold transition-colors shadow-sm"
         >
           <Smartphone className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline">Vivo/Android Fix</span>
+          <span className="text-[11px] font-bold">Vivo/Android</span>
         </button>
 
         <Link
