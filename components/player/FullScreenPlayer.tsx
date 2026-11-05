@@ -64,7 +64,10 @@ export function FullScreenPlayer({ onOpenTuneMix }: FullScreenPlayerProps) {
   if (!isFullScreenOpen || !currentTrack) return null;
 
   const liked = isLiked(currentTrack.id);
-  const progressPercent = duration > 0 ? (currentTime / duration) * 100 : 0;
+  const progressPercent =
+    duration > 0 && isFinite(duration)
+      ? Math.min(100, Math.max(0, (currentTime / duration) * 100))
+      : 0;
 
   const handleShare = async () => {
     const shareData = {

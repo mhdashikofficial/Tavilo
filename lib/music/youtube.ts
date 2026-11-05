@@ -14,22 +14,59 @@ function parseDuration(durationStr?: string): number {
 }
 
 function cleanTitleAndArtist(rawTitle: string, channelName: string): { artist: string; title: string } {
+  const noiseRegex = /[\(\[\{](?:official\s*(?:video|audio|music\s*video|lyric\s*video|visualizer)|lyrics?|hd|4k|audio|remastered|full\s*song|video\s*song|lyrical\s*video|music\s*video)[\)\]\}]/gi;
+  const standaloneNoise = /\b(official\s*(?:video|audio|music\s*video|lyric\s*video|visualizer)|video\s*song|lyric\s*video|lyrical\s*video|audio\s*song|full\s*song|visualizer|remastered|4k|hd|lyrics?)\b/gi;
+
+  const text = rawTitle.replace(noiseRegex, ' ').trim();
   let artist = channelName.replace(/\s*-\s*Topic$/i, '').trim();
-  let title = rawTitle;
 
-  if (rawTitle.includes(' - ')) {
-    const parts = rawTitle.split(' - ');
-    artist = parts[0].trim();
-    title = parts.slice(1).join(' - ').trim();
+  // Split on pipe (|), dash (-), bullet (•), or colon (:)
+  const rawSegments = text.split(/[\-\|•:]/).map((s) => s.trim()).filter(Boolean);
+  const segments = rawSegments
+    .map((s) => s.replace(standaloneNoise, ' ').trim())
+    .filter((s) => s.length > 0 && !/^(official|video|audio|song|lyrics?)$/i.test(s));
+
+  if (segments.length >= 2) {
+    const normChannel = artist.toLowerCase();
+    const seg0Norm = segments[0].toLowerCase();
+
+    // Check if segment 0 is the artist (e.g., "The Weeknd - Blinding Lights")
+    if (normChannel.includes(seg0Norm) || seg0Norm.includes(normChannel)) {
+      return {
+        artist: segments[0],
+        title: segments[1],
+      };
+    }
+
+    // Check if channel is record label (Sony Music, Saregama, Think Music, etc.)
+    const isLabel = /(music|records|studios|films|company|series|entertainment|digital|production)/i.test(artist);
+    if (isLabel) {
+      // Find composer or artist in remaining segments
+      const composer = segments.slice(1).find((s) =>
+        /(shyam|anirudh|rahman|sriram|bejoy|yesudas|pritam|arijit|harris|dsp|keeravani|vijay|sanah|job|sushin)/i.test(s)
+      );
+
+      // If segments[0] is movie name and segments[1] is song name, combine nicely or take song name
+      let songTitle = segments[0];
+      if (segments[1] && segments[1].length < 35 && !segments[1].includes(',')) {
+        songTitle = `${segments[0]} - ${segments[1]}`;
+      }
+
+      return {
+        title: songTitle,
+        artist: composer || segments[1] || artist,
+      };
+    }
+
+    return {
+      artist: segments[0],
+      title: segments[1],
+    };
   }
-
-  title = title
-    .replace(/[\(\[\{](?:official\s*(?:video|audio|music\s*video|lyric\s*video|visualizer)|lyrics?|hd|4k|audio|remastered)[\)\]\}]/gi, '')
-    .trim();
 
   return {
     artist: artist || channelName,
-    title: title || rawTitle,
+    title: segments[0] || text || rawTitle,
   };
 }
 

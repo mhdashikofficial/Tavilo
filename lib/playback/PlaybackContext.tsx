@@ -290,7 +290,7 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
 
     const handleDurationChange = () => {
       if (isNativeAudioStreamRef.current || !currentTrack || currentTrack.providerId !== 'youtube') {
-        if (!isNaN(audio.duration) && audio.duration > 0) {
+        if (!isNaN(audio.duration) && audio.duration > 0 && isFinite(audio.duration)) {
           setDuration(audio.duration);
         }
       }
@@ -664,11 +664,14 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
     };
   }, [isPlaying, currentTrack, enableWebAudioKeepAlive]);
 
-  // YouTube polling for currentTime & duration during playback
+  // YouTube polling for currentTime & duration during fallback playback
   useEffect(() => {
-    if (!isPlaying || !currentTrack || currentTrack.providerId !== 'youtube') return;
+    if (!isPlaying || !currentTrack || currentTrack.providerId !== 'youtube' || isNativeAudioStreamRef.current) return;
 
     const interval = setInterval(() => {
+      // If native stream is active, do not poll YouTube player (prevents time bar flicker)
+      if (isNativeAudioStreamRef.current) return;
+
       if (ytPlayerRef.current && isYtReadyRef.current) {
         try {
           const t = ytPlayerRef.current.getCurrentTime();
@@ -678,7 +681,7 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
             listenSecondsRef.current += 0.25;
           }
           const d = ytPlayerRef.current.getDuration();
-          if (typeof d === 'number' && !isNaN(d) && d > 0) {
+          if (typeof d === 'number' && !isNaN(d) && d > 0 && isFinite(d)) {
             setDuration(d);
             // Update MediaSession position state for Android 13/14/15 lock screen seekbar
             if ('mediaSession' in navigator && 'setPositionState' in navigator.mediaSession) {
@@ -758,13 +761,31 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
       setIsLoading(true);
       isNativeAudioStreamRef.current = false;
 
-      // Prime audio element synchronously within user gesture context
+      // Stop previous audio and prime element with silence in user gesture context (prevents old song bleeding)
       if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.src = SILENT_AUDIO_URI;
         audioRef.current.play().catch(() => {});
+      }
+      if (ytPlayerRef.current && isYtReadyRef.current) {
+        try {
+          ytPlayerRef.current.pauseVideo();
+        } catch {}
       }
 
       if (customQueue && !options?.isSearchPlay) {
-        setQueue(customQueue);
+        // Find index of clicked track to set up upcoming queue and history correctly
+        const trackIndex = customQueue.findIndex((t) => t.id === track.id);
+        if (trackIndex !== -1) {
+          const upcoming = customQueue.slice(trackIndex + 1);
+          setQueue(upcoming);
+          const preceding = customQueue.slice(0, trackIndex);
+          if (preceding.length > 0) {
+            setHistory((prev) => [...preceding.reverse(), ...prev].slice(0, 30));
+          }
+        } else {
+          setQueue(customQueue);
+        }
       } else {
         // Search play or standalone track play:
         // Clear any keyword search queue immediately so the Next button plays taste recommendations
@@ -787,8 +808,8 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
           } catch (err) {
             console.warn('Failed to populate taste queue:', err);
             const pool = isMalayalamTrack(track)
-              ? SEED_TRACKS.filter(t => isMalayalamTrack(t))
-              : SEED_TRACKS.filter(t => !isMalayalamTrack(t));
+              ? SEED_TRACKS.filter((t) => isMalayalamTrack(t))
+              : SEED_TRACKS.filter((t) => !isMalayalamTrack(t));
             const fallbackQueue = RecommendationEngine.generateRecommendationQueue(
               pool.length > 0 ? pool : SEED_TRACKS,
               preferences,
@@ -814,7 +835,7 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
         (async () => {
           try {
             const res = await fetch(
-              `/api/audio?title=${encodeURIComponent(track.title)}&artist=${encodeURIComponent(track.artist)}`
+              `/api/audio?title=${encodeURIComponent(track.title)}&artist=${encodeURIComponent(track.artist)}&query=${encodeURIComponent(`${track.title} ${track.artist}`)}`
             );
             if (playRequestIdRef.current !== currentRequestId) return;
             if (res.ok) {

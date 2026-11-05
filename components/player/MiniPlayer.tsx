@@ -25,7 +25,10 @@ export function MiniPlayer() {
   if (!currentTrack) return null;
 
   const liked = isLiked(currentTrack.id);
-  const progressPercent = duration > 0 ? (currentTime / duration) * 100 : 0;
+  const progressPercent =
+    duration > 0 && isFinite(duration)
+      ? Math.min(100, Math.max(0, (currentTime / duration) * 100))
+      : 0;
 
   return (
     <div className="fixed bottom-[58px] sm:bottom-0 left-0 right-0 z-40 px-2 sm:px-4 pb-1 sm:pb-2 transition-all duration-300">
