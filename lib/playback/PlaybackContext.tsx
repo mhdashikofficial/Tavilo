@@ -61,8 +61,7 @@ interface PlaybackContextType {
   setPocketMode: (active: boolean) => void;
 }
 
-const SILENT_AUDIO_URI =
-  'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
+const SILENT_AUDIO_URI = '/silence.wav';
 
 const PlaybackContext = createContext<PlaybackContextType | undefined>(undefined);
 
@@ -434,8 +433,8 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
       if (!window.YT || !window.YT.Player || ytPlayerRef.current) return;
       try {
         ytPlayerRef.current = new window.YT.Player('tavilo-yt-player', {
-          height: '64',
-          width: '64',
+          height: '200',
+          width: '200',
           playerVars: {
             autoplay: 1,
             controls: 0,
@@ -450,6 +449,12 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
             onReady: (event: any) => {
               isYtReadyRef.current = true;
               event.target.setVolume(volume * 100);
+              try {
+                const iframe = event.target.getIframe?.();
+                if (iframe) {
+                  iframe.setAttribute('allow', 'autoplay; encrypted-media; picture-in-picture');
+                }
+              } catch {}
               if (pendingYtVideoIdRef.current) {
                 event.target.loadVideoById(pendingYtVideoIdRef.current);
                 event.target.playVideo();
@@ -471,7 +476,7 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
                 if (audioRef.current && audioRef.current.paused) {
                   try {
                     audioRef.current.loop = true;
-                    if (audioRef.current.src !== SILENT_AUDIO_URI) {
+                    if (!audioRef.current.src.includes('silence.wav')) {
                       audioRef.current.src = SILENT_AUDIO_URI;
                     }
                     audioRef.current.volume = 1.0;
@@ -485,7 +490,7 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
                   if (audioRef.current) {
                     try {
                       audioRef.current.loop = true;
-                      if (audioRef.current.src !== SILENT_AUDIO_URI) {
+                      if (!audioRef.current.src.includes('silence.wav')) {
                         audioRef.current.src = SILENT_AUDIO_URI;
                       }
                       audioRef.current.volume = 1.0;
@@ -592,7 +597,7 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
           if (audioRef.current && audioRef.current.paused) {
             try {
               audioRef.current.loop = true;
-              if (audioRef.current.src !== SILENT_AUDIO_URI) {
+              if (!audioRef.current.src.includes('silence.wav')) {
                 audioRef.current.src = SILENT_AUDIO_URI;
               }
               audioRef.current.volume = 1.0;
@@ -765,7 +770,7 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
         if (audioRef.current) {
           try {
             audioRef.current.loop = true;
-            if (audioRef.current.src !== SILENT_AUDIO_URI) {
+            if (!audioRef.current.src.includes('silence.wav')) {
               audioRef.current.src = SILENT_AUDIO_URI;
             }
             audioRef.current.volume = 1.0;
@@ -867,7 +872,7 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
       if (audioRef.current) {
         try {
           audioRef.current.loop = true;
-          if (audioRef.current.src !== SILENT_AUDIO_URI) {
+          if (!audioRef.current.src.includes('silence.wav')) {
             audioRef.current.src = SILENT_AUDIO_URI;
           }
           audioRef.current.volume = 1.0;
@@ -1092,11 +1097,10 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
         aria-hidden="true"
         style={{
           position: 'fixed',
-          bottom: 0,
-          right: 0,
-          width: '2px',
-          height: '2px',
-          opacity: 0.01,
+          top: '-9999px',
+          left: '-9999px',
+          width: '200px',
+          height: '200px',
           pointerEvents: 'none',
           zIndex: -1,
         }}

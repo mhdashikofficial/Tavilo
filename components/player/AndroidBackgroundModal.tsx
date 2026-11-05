@@ -229,7 +229,7 @@ export function AndroidBackgroundModal({ isOpen, onClose }: AndroidBackgroundMod
               <span>2 Effective Ways to Keep Music Playing:</span>
             </h3>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               {/* Method 1: Pocket Mode */}
               <div className="p-4 rounded-2xl bg-neutral-950/90 border border-emerald-500/30 space-y-2">
                 <div className="flex items-center space-x-2 text-emerald-400">
@@ -258,7 +258,18 @@ export function AndroidBackgroundModal({ isOpen, onClose }: AndroidBackgroundMod
                   <h4 className="font-bold text-xs text-white">2. Lock-Screen Play Resume</h4>
                 </div>
                 <p className="text-[11px] text-neutral-300 leading-relaxed">
-                  If music pauses when pressing the physical power button, <strong>simply tap Play (▶) on your lock-screen notification</strong> (or press your Bluetooth earphone button). Android will resume the stream with the screen locked!
+                  When you minimize or turn off the screen, <strong>swipe down your Android notification shade or wake the lock screen and tap Play (▶)</strong>. Android will resume the stream in the background!
+                </p>
+              </div>
+
+              {/* Method 3: Chrome Desktop Site */}
+              <div className="p-4 rounded-2xl bg-neutral-950/90 border border-violet-500/30 space-y-2">
+                <div className="flex items-center space-x-2 text-violet-400">
+                  <Sparkles className="w-4 h-4" />
+                  <h4 className="font-bold text-xs text-white">3. Chrome Desktop Site Mode</h4>
+                </div>
+                <p className="text-[11px] text-neutral-300 leading-relaxed">
+                  Want to use WhatsApp or Instagram while listening? Tap Chrome&apos;s <strong>3 dots (⋮)</strong> menu in the top right → check <strong>&quot;Desktop site&quot;</strong>. Chrome will allow background play without pausing!
                 </p>
               </div>
             </div>
