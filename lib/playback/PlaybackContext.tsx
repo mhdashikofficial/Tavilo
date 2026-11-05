@@ -762,7 +762,9 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
         })();
       }
 
-      const streamApiUrl = process.env.NEXT_PUBLIC_STREAM_API_URL?.trim();
+      const streamApiUrl =
+        process.env.NEXT_PUBLIC_STREAM_API_URL?.trim() ||
+        'https://yammering-ginnie-mhdashikofficial-acf261b0.apps.mistral.run';
 
       // If Koyeb yt-dlp native audio microservice is configured, stream audio natively via HTML5 audio element
       if (track.providerId === 'youtube' && streamApiUrl) {
