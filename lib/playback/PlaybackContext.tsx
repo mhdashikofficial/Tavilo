@@ -98,9 +98,6 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
   const ytPlayerRef = useRef<any>(null);
   const isYtReadyRef = useRef<boolean>(false);
   const pendingYtVideoIdRef = useRef<string | null>(null);
-  // Tracks if currently using YouTube iframe fallback instead of direct native audio stream
-  const isFallbackIframeRef = useRef<boolean>(false);
-  const lastPositionStateUpdateRef = useRef<number>(0);
 
   // Tracks whether the pause was user-initiated or triggered by OS screen-off/backgrounding
   const isUserPausedRef = useRef<boolean>(false);
@@ -117,6 +114,8 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
 
   const listenSecondsRef = useRef<number>(0);
   const trackStartTimeRef = useRef<number>(0);
+  // Guards against rapid automatic skip cascading loops on error
+  const consecutiveErrorsRef = useRef<number>(0);
 
   // Request & release Screen Wake Lock to avoid unexpected display sleep while playing
   const requestWakeLock = useCallback(async () => {
@@ -267,30 +266,14 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
     } catch {}
 
     const handleTimeUpdate = () => {
-      if (!isFallbackIframeRef.current) {
-        currentTimeRef.current = audio.currentTime;
+      if (!currentTrack || currentTrack.providerId !== 'youtube') {
         setCurrentTime(audio.currentTime);
         listenSecondsRef.current += 0.25;
-
-        // Sync Android lock screen seekbar slider (throttled to 1 sec intervals)
-        if ('mediaSession' in navigator && 'setPositionState' in navigator.mediaSession) {
-          const now = Date.now();
-          if (now - lastPositionStateUpdateRef.current > 1000) {
-            lastPositionStateUpdateRef.current = now;
-            try {
-              navigator.mediaSession.setPositionState({
-                duration: Math.max(0, audio.duration || duration || 0),
-                playbackRate: 1,
-                position: Math.min(audio.duration || duration || 0, Math.max(0, audio.currentTime || 0)),
-              });
-            } catch {}
-          }
-        }
       }
     };
 
     const handleDurationChange = () => {
-      if (!isFallbackIframeRef.current) {
+      if (!currentTrack || currentTrack.providerId !== 'youtube') {
         if (!isNaN(audio.duration) && audio.duration > 0) {
           setDuration(audio.duration);
         }
@@ -298,7 +281,8 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
     };
 
     const handlePlaying = () => {
-      if (!isFallbackIframeRef.current) {
+      consecutiveErrorsRef.current = 0;
+      if (!currentTrack || currentTrack.providerId !== 'youtube') {
         setIsPlaying(true);
         setIsLoading(false);
         setError(null);
@@ -310,11 +294,9 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
     };
 
     const handlePause = () => {
-      if (!isFallbackIframeRef.current) {
+      if (!currentTrack || currentTrack.providerId !== 'youtube') {
         setIsPlaying(false);
-        if (!isPocketMode) {
-          releaseWakeLock();
-        }
+        releaseWakeLock();
         if ('mediaSession' in navigator) {
           navigator.mediaSession.playbackState = 'paused';
         }
@@ -322,40 +304,30 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
     };
 
     const handleWaiting = () => {
-      if (!isFallbackIframeRef.current) {
+      if (!currentTrack || currentTrack.providerId !== 'youtube') {
         setIsLoading(true);
       }
     };
 
     const handleCanPlay = () => {
-      setIsLoading(false);
-      if (!isUserPausedRef.current && audio.paused) {
-        audio.play().then(() => setIsPlaying(true)).catch(() => {});
+      if (!currentTrack || currentTrack.providerId !== 'youtube') {
+        setIsLoading(false);
       }
     };
 
     const handleError = (e: any) => {
-      // If native stream failed on a YouTube track, seamlessly fallback to YouTube iframe so the song still plays
-      if (!isFallbackIframeRef.current && currentTrack?.providerId === 'youtube' && ytPlayerRef.current) {
-        console.warn('Native stream error, falling back to YouTube iframe player:', e);
-        isFallbackIframeRef.current = true;
-        try {
-          ytPlayerRef.current.loadVideoById(currentTrack.streamUrl);
-          ytPlayerRef.current.playVideo();
-          setIsPlaying(true);
-          setIsLoading(false);
-          setError(null);
-          return;
-        } catch {}
+      if (!currentTrack || currentTrack.providerId !== 'youtube') {
+        console.error('Audio playback error:', e);
+        setIsLoading(false);
+        setIsPlaying(false);
+        consecutiveErrorsRef.current += 1;
+        if (consecutiveErrorsRef.current <= 2 && queue.length > 0) {
+          nextRef.current();
+        } else {
+          consecutiveErrorsRef.current = 0;
+          setError('Playback issue. Tap to play another track.');
+        }
       }
-
-      console.error('Audio playback error:', e);
-      setIsLoading(false);
-      setIsPlaying(false);
-      setError('Playback error. Loading next track...');
-      setTimeout(() => {
-        nextRef.current();
-      }, 1200);
     };
 
     audio.addEventListener('timeupdate', handleTimeUpdate);
@@ -485,9 +457,9 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
               }
             },
             onStateChange: (event: any) => {
-              if (!isFallbackIframeRef.current) return;
               // 1 = PLAYING, 2 = PAUSED, 0 = ENDED, 3 = BUFFERING
               if (event.data === 1) {
+                consecutiveErrorsRef.current = 0;
                 setIsPlaying(true);
                 setIsLoading(false);
                 setError(null);
@@ -495,8 +467,33 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
                 if ('mediaSession' in navigator) {
                   navigator.mediaSession.playbackState = 'playing';
                 }
+                // Ensure silent audio anchor is active to preserve Android background AudioFocus
+                if (audioRef.current && audioRef.current.paused) {
+                  try {
+                    audioRef.current.loop = true;
+                    if (audioRef.current.src !== SILENT_AUDIO_URI) {
+                      audioRef.current.src = SILENT_AUDIO_URI;
+                    }
+                    audioRef.current.volume = 1.0;
+                    audioRef.current.play().catch(() => {});
+                  } catch {}
+                }
               } else if (event.data === 2) {
+                // If not initiated by user, but by Android screen-off or background visibility loss:
                 if (!isUserPausedRef.current) {
+                  // Keep audio anchor alive with volume 1.0 so Android AudioFocus and lock-screen notification are NEVER killed!
+                  if (audioRef.current) {
+                    try {
+                      audioRef.current.loop = true;
+                      if (audioRef.current.src !== SILENT_AUDIO_URI) {
+                        audioRef.current.src = SILENT_AUDIO_URI;
+                      }
+                      audioRef.current.volume = 1.0;
+                      audioRef.current.play().catch(() => {});
+                    } catch {}
+                  }
+
+                  // Attempt immediate retry in case the browser throttled during screen transition
                   setTimeout(() => {
                     if (!isUserPausedRef.current && ytPlayerRef.current) {
                       try {
@@ -504,17 +501,25 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
                       } catch {}
                     }
                   }, 250);
+
+                  // Set MediaSession to paused so Android lock-screen widget displays the PLAY (▶) icon (allowing 1-tap lock-screen resume)
                   if ('mediaSession' in navigator) {
                     navigator.mediaSession.playbackState = 'paused';
                   }
                   setIsPlaying(false);
                 } else {
+                  // User explicitly initiated the pause
                   setIsPlaying(false);
                   if (!isPocketMode) {
                     releaseWakeLock();
                   }
                   if ('mediaSession' in navigator) {
                     navigator.mediaSession.playbackState = 'paused';
+                  }
+                  if (audioRef.current) {
+                    try {
+                      audioRef.current.pause();
+                    } catch {}
                   }
                 }
               } else if (event.data === 0) {
@@ -526,7 +531,14 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
             onError: (err: any) => {
               console.warn('YouTube playback error:', err);
               setIsLoading(false);
-              nextRef.current();
+              consecutiveErrorsRef.current += 1;
+              if (consecutiveErrorsRef.current <= 2 && queue.length > 0) {
+                nextRef.current();
+              } else {
+                consecutiveErrorsRef.current = 0;
+                setIsPlaying(false);
+                setError('Unable to stream this track. Tap another song.');
+              }
             },
           },
         });
@@ -562,7 +574,19 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
         // Device screen turned off or user switched apps
         if (!isUserPausedRef.current && currentTrack) {
           enableWebAudioKeepAlive();
-          if (isFallbackIframeRef.current && ytPlayerRef.current) {
+          // Keep audio anchor running with full volume (0-PCM silent WAV) so Android AudioFocus and AudioTrack remain active
+          if (audioRef.current && audioRef.current.paused) {
+            try {
+              audioRef.current.loop = true;
+              if (audioRef.current.src !== SILENT_AUDIO_URI) {
+                audioRef.current.src = SILENT_AUDIO_URI;
+              }
+              audioRef.current.volume = 1.0;
+              audioRef.current.play().catch(() => {});
+            } catch {}
+          }
+          // Resume YouTube if paused by visibility change
+          if (currentTrack?.providerId === 'youtube' && ytPlayerRef.current) {
             try {
               ytPlayerRef.current.playVideo();
             } catch {}
@@ -570,11 +594,7 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
         }
       } else if (document.visibilityState === 'visible') {
         // User came back to the app: sync playing state
-        if (!isFallbackIframeRef.current && audioRef.current) {
-          if (!audioRef.current.paused) {
-            setIsPlaying(true);
-          }
-        } else if (isFallbackIframeRef.current && currentTrack?.providerId === 'youtube' && ytPlayerRef.current && isYtReadyRef.current) {
+        if (currentTrack?.providerId === 'youtube' && ytPlayerRef.current && isYtReadyRef.current) {
           try {
             const state = ytPlayerRef.current.getPlayerState();
             if (state === 1) {
@@ -594,9 +614,9 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
     };
   }, [isPlaying, currentTrack, enableWebAudioKeepAlive]);
 
-  // YouTube polling for currentTime & duration during fallback iframe playback only
+  // YouTube polling for currentTime & duration during playback
   useEffect(() => {
-    if (!isPlaying || !currentTrack || currentTrack.providerId !== 'youtube' || !isFallbackIframeRef.current) return;
+    if (!isPlaying || !currentTrack || currentTrack.providerId !== 'youtube') return;
 
     const interval = setInterval(() => {
       if (ytPlayerRef.current && isYtReadyRef.current) {
@@ -674,16 +694,6 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
         isUserPausedRef.current = true;
         pauseRef.current();
       });
-
-      if ('setPositionState' in navigator.mediaSession && duration > 0) {
-        try {
-          navigator.mediaSession.setPositionState({
-            duration: Math.max(0, duration),
-            playbackRate: 1,
-            position: Math.min(duration, Math.max(0, currentTimeRef.current)),
-          });
-        } catch {}
-      }
     }
   }, [currentTrack, duration, isPlaying]);
 
@@ -732,54 +742,68 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
         })();
       }
 
-      // Native audio stream playback for YouTube and direct audio tracks
-      isUserPausedRef.current = false;
-      isFallbackIframeRef.current = false;
-      enableWebAudioKeepAlive();
+      // Check whether track is a YouTube video or an audio stream
+      if (track.providerId === 'youtube') {
+        isUserPausedRef.current = false;
+        enableWebAudioKeepAlive();
 
-      // Pause YouTube iframe if it was active
-      if (isYtReadyRef.current && ytPlayerRef.current) {
-        try {
-          ytPlayerRef.current.pauseVideo();
-        } catch {}
-      }
-
-      // High-performance streaming proxy endpoint for YouTube tracks
-      // Direct stream URL for native tracks (Jamendo, Audius, custom)
-      const streamSource =
-        track.providerId === 'youtube'
-          ? `/api/stream?id=${encodeURIComponent(track.streamUrl)}`
-          : track.streamUrl;
-
-      if (audioRef.current) {
-        audioRef.current.loop = false;
-        audioRef.current.src = streamSource;
-        audioRef.current.volume = isMuted ? 0 : volume;
-        audioRef.current
-          .play()
-          .then(() => {
-            setIsPlaying(true);
-            setIsLoading(false);
-            requestWakeLock();
-          })
-          .catch(err => {
-            console.warn('Direct stream initiation buffering or delayed:', err);
-            // If native stream play fails immediately, fall back to YouTube iframe so song plays immediately
-            if (track.providerId === 'youtube' && isYtReadyRef.current && ytPlayerRef.current) {
-              isFallbackIframeRef.current = true;
-              try {
-                ytPlayerRef.current.loadVideoById(track.streamUrl);
-                ytPlayerRef.current.playVideo();
-                setIsPlaying(true);
-                setIsLoading(false);
-                return;
-              } catch {}
+        // Loop the silent audio anchor on HTML5 audio element with volume 1.0 (pure silence 0-PCM WAV) so Android gives full AudioFocus in background/screen-off
+        if (audioRef.current) {
+          try {
+            audioRef.current.loop = true;
+            if (audioRef.current.src !== SILENT_AUDIO_URI) {
+              audioRef.current.src = SILENT_AUDIO_URI;
             }
-            setIsLoading(false);
-          });
+            audioRef.current.volume = 1.0;
+            audioRef.current.play().catch(() => {});
+          } catch {}
+        }
+
+        const videoId = track.streamUrl;
+        if (isYtReadyRef.current && ytPlayerRef.current) {
+          try {
+            ytPlayerRef.current.loadVideoById(videoId);
+            ytPlayerRef.current.playVideo();
+            setIsPlaying(true);
+            requestWakeLock();
+          } catch (e) {
+            console.warn('Error loading YT video:', e);
+          }
+        } else {
+          pendingYtVideoIdRef.current = videoId;
+        }
+      } else {
+        isUserPausedRef.current = false;
+
+        // Stop YouTube player if playing
+        if (isYtReadyRef.current && ytPlayerRef.current) {
+          try {
+            ytPlayerRef.current.pauseVideo();
+          } catch {}
+        }
+
+        // Play HTML5 audio
+        if (audioRef.current) {
+          audioRef.current.loop = false;
+          audioRef.current.src = track.streamUrl;
+          audioRef.current.volume = volume;
+          audioRef.current.currentTime = 0;
+          audioRef.current
+            .play()
+            .then(() => {
+              setIsPlaying(true);
+              setIsLoading(false);
+              requestWakeLock();
+            })
+            .catch(err => {
+              console.warn('Playback initiation prevented or failed:', err);
+              setIsLoading(false);
+              setIsPlaying(false);
+            });
+        }
       }
     },
-    [finalizeCurrentPlaySession, preferences, requestWakeLock, volume, isMuted, enableWebAudioKeepAlive]
+    [finalizeCurrentPlaySession, preferences, requestWakeLock, volume, enableWebAudioKeepAlive]
   );
 
   const togglePlay = () => {
@@ -793,15 +817,15 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
 
   const pause = () => {
     isUserPausedRef.current = true;
-    if (audioRef.current) {
-      audioRef.current.pause();
-    }
-    if (isFallbackIframeRef.current && currentTrack?.providerId === 'youtube') {
+    if (currentTrack?.providerId === 'youtube') {
       if (ytPlayerRef.current && isYtReadyRef.current) {
         try {
           ytPlayerRef.current.pauseVideo();
         } catch {}
       }
+    }
+    if (audioRef.current) {
+      audioRef.current.pause();
     }
     if (keepAliveBufferSourceRef.current) {
       try {
@@ -811,9 +835,7 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
       keepAliveBufferSourceRef.current = null;
     }
     setIsPlaying(false);
-    if (!isPocketMode) {
-      releaseWakeLock();
-    }
+    releaseWakeLock();
     if ('mediaSession' in navigator) {
       navigator.mediaSession.playbackState = 'paused';
     }
@@ -822,10 +844,20 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
   const resume = () => {
     isUserPausedRef.current = false;
     enableWebAudioKeepAlive();
-    if (isFallbackIframeRef.current && currentTrack?.providerId === 'youtube') {
+    if (currentTrack?.providerId === 'youtube') {
       if (ytPlayerRef.current && isYtReadyRef.current) {
         try {
           ytPlayerRef.current.playVideo();
+        } catch {}
+      }
+      if (audioRef.current) {
+        try {
+          audioRef.current.loop = true;
+          if (audioRef.current.src !== SILENT_AUDIO_URI) {
+            audioRef.current.src = SILENT_AUDIO_URI;
+          }
+          audioRef.current.volume = 1.0;
+          audioRef.current.play().catch(() => {});
         } catch {}
       }
       setIsPlaying(true);
@@ -846,25 +878,18 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
   };
 
   const seek = (seconds: number) => {
-    currentTimeRef.current = seconds;
-    setCurrentTime(seconds);
-    if (isFallbackIframeRef.current && currentTrack?.providerId === 'youtube') {
+    if (currentTrack?.providerId === 'youtube') {
       if (ytPlayerRef.current && isYtReadyRef.current) {
         try {
           ytPlayerRef.current.seekTo(seconds, true);
         } catch {}
       }
+      currentTimeRef.current = seconds;
+      setCurrentTime(seconds);
     } else if (audioRef.current) {
       audioRef.current.currentTime = seconds;
-    }
-    if ('mediaSession' in navigator && 'setPositionState' in navigator.mediaSession) {
-      try {
-        navigator.mediaSession.setPositionState({
-          duration: Math.max(0, duration || 0),
-          playbackRate: 1,
-          position: Math.min(duration || 0, Math.max(0, seconds)),
-        });
-      } catch {}
+      currentTimeRef.current = seconds;
+      setCurrentTime(seconds);
     }
   };
 
@@ -1053,10 +1078,10 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
         aria-hidden="true"
         style={{
           position: 'fixed',
-          bottom: '-9999px',
-          right: '-9999px',
-          width: '240px',
-          height: '240px',
+          bottom: 0,
+          right: 0,
+          width: '2px',
+          height: '2px',
           opacity: 0.01,
           pointerEvents: 'none',
           zIndex: -1,
