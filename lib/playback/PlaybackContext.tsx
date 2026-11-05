@@ -110,6 +110,7 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
   const resumeRef = useRef<() => void>(() => {});
   const pauseRef = useRef<() => void>(() => {});
   const seekRef = useRef<(s: number) => void>(() => {});
+  const currentTimeRef = useRef<number>(0);
 
   const listenSecondsRef = useRef<number>(0);
   const trackStartTimeRef = useRef<number>(0);
@@ -605,6 +606,7 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
         try {
           const t = ytPlayerRef.current.getCurrentTime();
           if (typeof t === 'number' && !isNaN(t)) {
+            currentTimeRef.current = t;
             setCurrentTime(t);
             listenSecondsRef.current += 0.25;
           }
@@ -665,18 +667,18 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
       });
       navigator.mediaSession.setActionHandler('seekforward', details => {
         const offset = details.seekOffset || 10;
-        seekRef.current(Math.min(duration, currentTime + offset));
+        seekRef.current(Math.min(duration, currentTimeRef.current + offset));
       });
       navigator.mediaSession.setActionHandler('seekbackward', details => {
         const offset = details.seekOffset || 10;
-        seekRef.current(Math.max(0, currentTime - offset));
+        seekRef.current(Math.max(0, currentTimeRef.current - offset));
       });
       navigator.mediaSession.setActionHandler('stop', () => {
         isUserPausedRef.current = true;
         pauseRef.current();
       });
     }
-  }, [currentTrack, duration, currentTime, isPlaying]);
+  }, [currentTrack, duration, isPlaying]);
 
   const playTrack = useCallback(
     (track: Track, customQueue?: Track[], options?: PlayOptions) => {
@@ -865,9 +867,11 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
           ytPlayerRef.current.seekTo(seconds, true);
         } catch {}
       }
+      currentTimeRef.current = seconds;
       setCurrentTime(seconds);
     } else if (audioRef.current) {
       audioRef.current.currentTime = seconds;
+      currentTimeRef.current = seconds;
       setCurrentTime(seconds);
     }
   };

@@ -225,6 +225,20 @@ export function FullScreenPlayer({ onOpenTuneMix }: FullScreenPlayerProps) {
             </button>
           </div>
         </div>
+
+        {/* Quick Pocket Screen-Off Mode button for mobile */}
+        <div className="w-full mt-3 flex items-center justify-between px-3 py-2 rounded-2xl bg-black/40 border border-white/10 text-xs">
+          <div className="flex items-center space-x-2 text-neutral-300">
+            <Moon className="w-4 h-4 text-emerald-400" />
+            <span className="text-[11px] sm:text-xs">Listen with screen off in pocket (0% battery):</span>
+          </div>
+          <button
+            onClick={() => setPocketMode(true)}
+            className="px-3 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-400 font-bold text-xs transition-colors flex items-center space-x-1"
+          >
+            <span>Pocket Mode</span>
+          </button>
+        </div>
       </div>
 
       {/* Bottom Controls Area */}

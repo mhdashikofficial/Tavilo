@@ -89,26 +89,29 @@ export default function LibraryPage() {
 
         {/* Liked Songs Hero Card (Show in 'all' or 'liked') */}
         {(activeTab === 'all' || activeTab === 'liked') && (
-          <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-emerald-900/60 via-tavilo-card to-[#121622] border border-tavilo-green/30 p-6 sm:p-8 shadow-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-6">
+          <div
+            onClick={() => setActiveTab('liked')}
+            className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-emerald-900/60 via-tavilo-card to-[#121622] border border-tavilo-green/30 p-6 sm:p-8 shadow-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-6 cursor-pointer group hover:border-tavilo-green/50 transition-colors"
+          >
             <div className="flex items-center space-x-5">
-              <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl bg-gradient-to-br from-tavilo-green to-emerald-800 flex items-center justify-center text-black flex-shrink-0 shadow-xl shadow-tavilo-green/20">
+              <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl bg-gradient-to-br from-tavilo-green to-emerald-800 flex items-center justify-center text-black flex-shrink-0 shadow-xl shadow-tavilo-green/20 group-hover:scale-105 transition-transform">
                 <Heart className="w-10 h-10 fill-current" />
               </div>
               <div>
                 <span className="text-xs uppercase font-bold tracking-wider text-tavilo-green">
                   Auto Collection
                 </span>
-                <h2 className="text-2xl sm:text-3xl font-extrabold text-white mt-0.5">
+                <h2 className="text-2xl sm:text-3xl font-extrabold text-white mt-0.5 group-hover:text-tavilo-green transition-colors">
                   Liked Songs
                 </h2>
                 <p className="text-xs sm:text-sm text-tavilo-text-secondary mt-1">
-                  {likedTracks.length} tracks you love • Used for taste recommendations
+                  {likedTracks.length} tracks you love • Click to browse all
                 </p>
               </div>
             </div>
 
             {likedTracks.length > 0 && (
-              <div className="flex items-center space-x-3">
+              <div className="flex items-center space-x-3" onClick={(e) => e.stopPropagation()}>
                 <button
                   onClick={() => handlePlayLiked(false)}
                   className="w-12 h-12 rounded-full bg-tavilo-green text-black flex items-center justify-center hover:scale-105 active:scale-95 transition-transform shadow-lg shadow-tavilo-green/30"
@@ -125,6 +128,34 @@ export default function LibraryPage() {
                 </button>
               </div>
             )}
+          </div>
+        )}
+
+        {/* Liked Songs Quick Preview (Shown in 'all' tab if songs exist) */}
+        {activeTab === 'all' && likedTracks.length > 0 && (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-base sm:text-lg font-bold text-white tracking-tight flex items-center space-x-2">
+                <Heart className="w-4 h-4 text-tavilo-green fill-tavilo-green" />
+                <span>Your Favorite Songs</span>
+              </h2>
+              <button
+                onClick={() => setActiveTab('liked')}
+                className="text-xs font-semibold text-tavilo-green hover:underline"
+              >
+                View all ({likedTracks.length}) →
+              </button>
+            </div>
+            <div className="bg-tavilo-card/50 border border-tavilo-border rounded-2xl p-2 sm:p-4 space-y-1">
+              {likedTracks.slice(0, 6).map((track, idx) => (
+                <TrackRow
+                  key={track.id}
+                  track={track}
+                  index={idx}
+                  playlistContext={likedTracks}
+                />
+              ))}
+            </div>
           </div>
         )}
 

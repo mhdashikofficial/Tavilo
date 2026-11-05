@@ -6,6 +6,7 @@ import { CURATED_PLAYLISTS, SEED_TRACKS } from '@/lib/music/seed';
 
 const STORAGE_KEY_PREFS = 'tavilo_user_preferences_v4';
 const STORAGE_KEY_CUSTOM_PLAYLISTS = 'tavilo_user_custom_playlists_v4';
+const STORAGE_KEY_LIKED_ENTITIES = 'tavilo_liked_entities_v4';
 
 const DEFAULT_PREFERENCES: UserPreferences = {
   likedTrackIds: [SEED_TRACKS[0].id, SEED_TRACKS[1].id],
@@ -108,11 +109,36 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      // Seed initial liked track entities
+      // Seed initial liked track entities & restore saved custom/YouTube liked tracks
       const initialMap: Record<string, Track> = {};
       SEED_TRACKS.forEach(t => {
         initialMap[t.id] = t;
       });
+
+      const savedLikedEntities = localStorage.getItem(STORAGE_KEY_LIKED_ENTITIES);
+      if (savedLikedEntities) {
+        try {
+          const parsedEntities = JSON.parse(savedLikedEntities);
+          if (parsedEntities && typeof parsedEntities === 'object') {
+            Object.assign(initialMap, parsedEntities);
+          }
+        } catch {}
+      }
+
+      // Also restore any track entities stored in recentlyPlayed sessions
+      if (savedPrefs) {
+        try {
+          const p = JSON.parse(savedPrefs);
+          if (Array.isArray(p.recentlyPlayed)) {
+            p.recentlyPlayed.forEach((item: any) => {
+              if (item?.track?.id) {
+                initialMap[item.track.id] = item.track;
+              }
+            });
+          }
+        } catch {}
+      }
+
       setLikedTrackEntities(initialMap);
     } catch (err) {
       console.warn('Error reading from localStorage:', err);
@@ -128,6 +154,17 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
     }
   }, [preferences]);
 
+  // Persist liked track entities so liked songs from search/YouTube/trending never disappear
+  useEffect(() => {
+    if (Object.keys(likedTrackEntities).length > 0) {
+      try {
+        localStorage.setItem(STORAGE_KEY_LIKED_ENTITIES, JSON.stringify(likedTrackEntities));
+      } catch (err) {
+        console.warn('Error saving liked track entities to localStorage:', err);
+      }
+    }
+  }, [likedTrackEntities]);
+
   // Save custom playlists
   useEffect(() => {
     try {
@@ -142,7 +179,13 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
   };
 
   const toggleLike = (track: Track) => {
-    setLikedTrackEntities(prev => ({ ...prev, [track.id]: track }));
+    setLikedTrackEntities(prev => {
+      const next = { ...prev, [track.id]: track };
+      try {
+        localStorage.setItem(STORAGE_KEY_LIKED_ENTITIES, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
 
     setPreferences(prev => {
       const exists = prev.likedTrackIds.includes(track.id);
