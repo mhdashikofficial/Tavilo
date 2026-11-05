@@ -335,6 +335,20 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
     };
 
     const handleError = (e: any) => {
+      // If native stream failed on a YouTube track, seamlessly fallback to YouTube iframe so the song still plays
+      if (!isFallbackIframeRef.current && currentTrack?.providerId === 'youtube' && ytPlayerRef.current) {
+        console.warn('Native stream error, falling back to YouTube iframe player:', e);
+        isFallbackIframeRef.current = true;
+        try {
+          ytPlayerRef.current.loadVideoById(currentTrack.streamUrl);
+          ytPlayerRef.current.playVideo();
+          setIsPlaying(true);
+          setIsLoading(false);
+          setError(null);
+          return;
+        } catch {}
+      }
+
       console.error('Audio playback error:', e);
       setIsLoading(false);
       setIsPlaying(false);
@@ -750,6 +764,17 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
           })
           .catch(err => {
             console.warn('Direct stream initiation buffering or delayed:', err);
+            // If native stream play fails immediately, fall back to YouTube iframe so song plays immediately
+            if (track.providerId === 'youtube' && isYtReadyRef.current && ytPlayerRef.current) {
+              isFallbackIframeRef.current = true;
+              try {
+                ytPlayerRef.current.loadVideoById(track.streamUrl);
+                ytPlayerRef.current.playVideo();
+                setIsPlaying(true);
+                setIsLoading(false);
+                return;
+              } catch {}
+            }
             setIsLoading(false);
           });
       }
