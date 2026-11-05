@@ -21,6 +21,7 @@ import {
   Check,
   Tv,
   Smartphone,
+  Moon,
 } from 'lucide-react';
 import { usePlayback } from '@/lib/playback/PlaybackContext';
 import { useLibrary } from '@/lib/library/LibraryContext';
@@ -53,6 +54,7 @@ export function FullScreenPlayer({ onOpenTuneMix }: FullScreenPlayerProps) {
     setQueueOpen,
     isQueueOpen,
     setBackgroundModalOpen,
+    setPocketMode,
   } = usePlayback();
 
   const { isLiked, toggleLike, dislikeTrack } = useLibrary();
@@ -117,6 +119,15 @@ export function FullScreenPlayer({ onOpenTuneMix }: FullScreenPlayerProps) {
         </div>
 
         <div className="flex items-center space-x-2">
+          <button
+            onClick={() => setPocketMode(true)}
+            title="OLED Pocket Mode — 0% screen power & non-stop pocket playback"
+            aria-label="Pocket Mode"
+            className="p-2.5 rounded-full bg-neutral-900 border border-neutral-700 text-neutral-300 hover:text-emerald-400 hover:border-emerald-500/40 transition-colors"
+          >
+            <Moon className="w-5 h-5 text-emerald-400" />
+          </button>
+
           <button
             onClick={() => setBackgroundModalOpen(true)}
             title="Vivo & Android Screen-Off Background Audio Fix"
@@ -320,8 +331,17 @@ export function FullScreenPlayer({ onOpenTuneMix }: FullScreenPlayerProps) {
             />
           </div>
 
-          {/* Actions: Tune My Mix & Share */}
-          <div className="flex items-center space-x-3">
+          {/* Actions: Pocket Mode, Tune My Mix & Share */}
+          <div className="flex items-center space-x-2 sm:space-x-3">
+            <button
+              onClick={() => setPocketMode(true)}
+              title="OLED Pocket Mode — Pure Black Screen & 0% Battery"
+              className="flex items-center space-x-1.5 px-3 py-1.5 rounded-full bg-neutral-900 border border-neutral-700 text-neutral-300 hover:text-white hover:border-emerald-500/40 text-xs font-semibold transition-colors"
+            >
+              <Moon className="w-3.5 h-3.5 text-emerald-400" />
+              <span className="hidden sm:inline">Pocket</span>
+            </button>
+
             {onOpenTuneMix && (
               <button
                 onClick={onOpenTuneMix}

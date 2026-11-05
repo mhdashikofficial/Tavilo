@@ -57,6 +57,8 @@ interface PlaybackContextType {
   notificationPermission: NotificationPermission | 'unsupported';
   requestNotificationPermission: () => Promise<boolean>;
   enableWebAudioKeepAlive: () => void;
+  isPocketMode: boolean;
+  setPocketMode: (active: boolean) => void;
 }
 
 const SILENT_AUDIO_URI =
@@ -84,6 +86,7 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
   const [isQueueOpen, setQueueOpen] = useState<boolean>(false);
   const [isBackgroundModalOpen, setBackgroundModalOpen] = useState<boolean>(false);
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | 'unsupported'>('default');
+  const [isPocketMode, setPocketModeState] = useState<boolean>(false);
 
   // Web Audio keep-alive reference to prevent Android OS audio track suspension
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -126,6 +129,7 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const releaseWakeLock = useCallback(async () => {
+    // Keep WakeLock held if Pocket Mode is active
     if (wakeLockRef.current) {
       try {
         await wakeLockRef.current.release();
@@ -224,6 +228,21 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
       return false;
     }
   }, []);
+
+  const setPocketMode = useCallback(
+    (active: boolean) => {
+      setPocketModeState(active);
+      if (active) {
+        requestWakeLock();
+        enableWebAudioKeepAlive();
+      } else {
+        if (!isPlaying) {
+          releaseWakeLock();
+        }
+      }
+    },
+    [isPlaying, requestWakeLock, releaseWakeLock, enableWebAudioKeepAlive]
+  );
 
   // Initialize Audio Element safely on client
   useEffect(() => {
@@ -444,32 +463,52 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
                     if (audioRef.current.src !== SILENT_AUDIO_URI) {
                       audioRef.current.src = SILENT_AUDIO_URI;
                     }
-                    audioRef.current.volume = 0.001;
+                    audioRef.current.volume = 1.0;
                     audioRef.current.play().catch(() => {});
                   } catch {}
                 }
               } else if (event.data === 2) {
                 // If not initiated by user, but by Android screen-off or background visibility loss:
-                if (!isUserPausedRef.current && typeof document !== 'undefined' && document.visibilityState === 'hidden') {
-                  // Keep audio anchor alive and auto-resume video
-                  if (audioRef.current && audioRef.current.paused) {
+                if (!isUserPausedRef.current) {
+                  // Keep audio anchor alive with volume 1.0 so Android AudioFocus and lock-screen notification are NEVER killed!
+                  if (audioRef.current) {
                     try {
                       audioRef.current.loop = true;
                       if (audioRef.current.src !== SILENT_AUDIO_URI) {
                         audioRef.current.src = SILENT_AUDIO_URI;
                       }
-                      audioRef.current.volume = 0.001;
+                      audioRef.current.volume = 1.0;
                       audioRef.current.play().catch(() => {});
                     } catch {}
                   }
-                  try {
-                    ytPlayerRef.current?.playVideo();
-                  } catch {}
-                } else {
-                  setIsPlaying(false);
-                  releaseWakeLock();
+
+                  // Attempt immediate retry in case the browser throttled during screen transition
+                  setTimeout(() => {
+                    if (!isUserPausedRef.current && ytPlayerRef.current) {
+                      try {
+                        ytPlayerRef.current.playVideo();
+                      } catch {}
+                    }
+                  }, 250);
+
+                  // Set MediaSession to paused so Android lock-screen widget displays the PLAY (▶) icon (allowing 1-tap lock-screen resume)
                   if ('mediaSession' in navigator) {
                     navigator.mediaSession.playbackState = 'paused';
+                  }
+                  setIsPlaying(false);
+                } else {
+                  // User explicitly initiated the pause
+                  setIsPlaying(false);
+                  if (!isPocketMode) {
+                    releaseWakeLock();
+                  }
+                  if ('mediaSession' in navigator) {
+                    navigator.mediaSession.playbackState = 'paused';
+                  }
+                  if (audioRef.current) {
+                    try {
+                      audioRef.current.pause();
+                    } catch {}
                   }
                 }
               } else if (event.data === 0) {
@@ -515,7 +554,7 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'hidden') {
         // Device screen turned off or user switched apps
-        if (isPlaying && !isUserPausedRef.current) {
+        if (!isUserPausedRef.current && currentTrack) {
           enableWebAudioKeepAlive();
           // Keep audio anchor running with full volume (0-PCM silent WAV) so Android AudioFocus and AudioTrack remain active
           if (audioRef.current && audioRef.current.paused) {
@@ -1007,6 +1046,8 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
         notificationPermission,
         requestNotificationPermission,
         enableWebAudioKeepAlive,
+        isPocketMode,
+        setPocketMode,
       }}
     >
       {children}
@@ -1016,15 +1057,13 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
         aria-hidden="true"
         style={{
           position: 'fixed',
-          bottom: 0,
-          right: 0,
-          width: '64px',
-          height: '64px',
-          opacity: 0.99,
+          bottom: '-9999px',
+          right: '-9999px',
+          width: '240px',
+          height: '240px',
+          opacity: 0.01,
           pointerEvents: 'none',
-          zIndex: 1,
-          overflow: 'hidden',
-          clipPath: 'circle(0% at 0 0)',
+          zIndex: -1,
         }}
       >
         <div id="tavilo-yt-player" />

@@ -8,6 +8,7 @@ import { FullScreenPlayer } from '@/components/player/FullScreenPlayer';
 import { QueueModal } from '@/components/player/QueueModal';
 import { TuneMixModal } from '@/components/tune/TuneMixModal';
 import { AndroidBackgroundModal } from '@/components/player/AndroidBackgroundModal';
+import { PocketModeOverlay } from '@/components/player/PocketModeOverlay';
 import { PwaInstallPrompt } from '@/components/pwa/PwaInstallPrompt';
 import { usePlayback } from '@/lib/playback/PlaybackContext';
 
@@ -54,6 +55,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         isOpen={isBackgroundModalOpen}
         onClose={() => setBackgroundModalOpen(false)}
       />
+
+      {/* OLED Pocket Mode / Screen Saver Overlay */}
+      <PocketModeOverlay />
     </div>
   );
 }

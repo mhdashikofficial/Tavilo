@@ -14,6 +14,8 @@ import {
   ShieldCheck,
   Sparkles,
   Radio,
+  Moon,
+  Play,
 } from 'lucide-react';
 import { usePlayback } from '@/lib/playback/PlaybackContext';
 import { cn } from '@/lib/utils';
@@ -32,6 +34,7 @@ export function AndroidBackgroundModal({ isOpen, onClose }: AndroidBackgroundMod
     enableWebAudioKeepAlive,
     resume,
     currentTrack,
+    setPocketMode,
   } = usePlayback();
 
   const [activeTab, setActiveTab] = useState<BrandTab>('vivo');
@@ -216,6 +219,48 @@ export function AndroidBackgroundModal({ isOpen, onClose }: AndroidBackgroundMod
                 <Bell className="w-4 h-4 text-tavilo-violet" />
                 <span>Send Test Lock-Screen Alert</span>
               </button>
+            </div>
+          </div>
+
+          {/* 2 Methods to Guarantee Background Playback */}
+          <div className="space-y-3">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-tavilo-green flex items-center space-x-1.5">
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>2 Effective Ways to Keep Music Playing:</span>
+            </h3>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {/* Method 1: Pocket Mode */}
+              <div className="p-4 rounded-2xl bg-neutral-950/90 border border-emerald-500/30 space-y-2">
+                <div className="flex items-center space-x-2 text-emerald-400">
+                  <Moon className="w-4 h-4" />
+                  <h4 className="font-bold text-xs text-white">1. OLED Pocket Mode (100% Guaranteed)</h4>
+                </div>
+                <p className="text-[11px] text-neutral-300 leading-relaxed">
+                  Turns your screen <strong>100% pitch-black</strong>. On OLED/AMOLED screens, black pixels use <strong>0% battery power</strong>, and phone never suspends the music in your pocket!
+                </p>
+                <button
+                  onClick={() => {
+                    onClose();
+                    setPocketMode(true);
+                  }}
+                  className="w-full py-2 px-3 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 text-xs font-bold flex items-center justify-center space-x-1.5 transition-colors"
+                >
+                  <Moon className="w-3.5 h-3.5" />
+                  <span>Try Pocket Mode Now</span>
+                </button>
+              </div>
+
+              {/* Method 2: Lock Screen Play Resume */}
+              <div className="p-4 rounded-2xl bg-neutral-950/90 border border-blue-500/30 space-y-2">
+                <div className="flex items-center space-x-2 text-blue-400">
+                  <Play className="w-4 h-4 fill-current" />
+                  <h4 className="font-bold text-xs text-white">2. Lock-Screen Play Resume</h4>
+                </div>
+                <p className="text-[11px] text-neutral-300 leading-relaxed">
+                  If music pauses when pressing the physical power button, <strong>simply tap Play (▶) on your lock-screen notification</strong> (or press your Bluetooth earphone button). Android will resume the stream with the screen locked!
+                </p>
+              </div>
             </div>
           </div>
 

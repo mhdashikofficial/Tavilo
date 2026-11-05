@@ -2,7 +2,7 @@
 
 import React from 'react';
 import Image from 'next/image';
-import { Play, Pause, SkipForward, Heart, Maximize2, Volume2, ListMusic } from 'lucide-react';
+import { Play, Pause, SkipForward, Heart, Maximize2, Volume2, ListMusic, Moon } from 'lucide-react';
 import { usePlayback } from '@/lib/playback/PlaybackContext';
 import { useLibrary } from '@/lib/library/LibraryContext';
 import { cn } from '@/lib/utils';
@@ -18,6 +18,7 @@ export function MiniPlayer() {
     setFullScreenOpen,
     setQueueOpen,
     isQueueOpen,
+    setPocketMode,
   } = usePlayback();
   const { isLiked, toggleLike } = useLibrary();
 
@@ -95,6 +96,16 @@ export function MiniPlayer() {
             )}
           >
             <Heart className={cn('w-5 h-5', liked && 'fill-tavilo-green')} />
+          </button>
+
+          {/* OLED Pocket Mode */}
+          <button
+            onClick={() => setPocketMode(true)}
+            title="OLED Pocket Mode — Pure Black Screen & 0% Battery"
+            aria-label="Pocket Mode"
+            className="flex p-2 rounded-full text-tavilo-text-muted hover:text-emerald-400 hover:bg-tavilo-surface transition-colors"
+          >
+            <Moon className="w-4 h-4" />
           </button>
 
           {/* Queue Button (Desktop) */}
