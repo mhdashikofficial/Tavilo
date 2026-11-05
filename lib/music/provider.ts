@@ -3,35 +3,40 @@ import { SEED_TRACKS, CURATED_PLAYLISTS, MOOD_CATEGORIES } from './seed';
 import { fetchAudiusTrending, searchAudiusTracks, fetchAudiusTrackById, fetchAudiusTrendingByGenre } from './audius';
 import { searchJamendo, isJamendoConfigured } from './jamendo';
 import { searchYouTube } from './youtube';
+import { searchSaavnTracks, getSaavnTrending } from './saavn';
 import { getSonicProfileForTrack, isMalayalamTrack } from '@/lib/recommendations/sonicGraph';
 
 export class MusicProviderService {
   /**
-   * Returns trending tracks (combining YouTube live trending + curated high quality catalog)
+   * Returns trending tracks (combining Saavn Hi-Fi master charts + seed catalog fallback)
    */
   public static async getTrending(limit: number = 24): Promise<Track[]> {
     try {
-      const half = Math.ceil(limit / 2);
-      const [mal, eng] = await Promise.all([
-        searchYouTube('latest trending malayalam songs official video', half),
-        searchYouTube('trending english songs billboard hot official video', half),
-      ]);
-      const blended = [...mal, ...eng];
-      if (blended.length > 0) return blended.slice(0, limit);
+      const saavnTrending = await getSaavnTrending('all', limit);
+      if (saavnTrending.length > 0) return saavnTrending.slice(0, limit);
     } catch (err) {
-      console.warn('Error fetching live trending, falling back to seed catalog:', err);
+      console.warn('Error fetching Saavn trending:', err);
     }
     return SEED_TRACKS.slice(0, limit);
   }
 
   /**
-   * Returns trending tracks categorized by Malayalam, English, Viral, or global blend from YouTube
+   * Returns trending tracks categorized by Malayalam, English, Viral, or global blend
    */
   public static async getTrendingByCategory(
     category: 'malayalam' | 'english' | 'viral' | 'all' = 'all',
     limit: number = 12
   ): Promise<Track[]> {
     try {
+      // Primary: High-fidelity studio master charts (clean cards, 320kbps MP4)
+      const saavnTracks = await getSaavnTrending(category, limit);
+      if (saavnTracks.length > 0) return saavnTracks.slice(0, limit);
+    } catch (err) {
+      console.warn('Error fetching Saavn trending category:', err);
+    }
+
+    try {
+      // Secondary fallback: YouTube official search
       if (category === 'malayalam') {
         const yt = await searchYouTube('latest trending malayalam songs official video', limit);
         if (yt.length > 0) return yt;
@@ -41,19 +46,11 @@ export class MusicProviderService {
       } else if (category === 'viral') {
         const yt = await searchYouTube('trending viral songs anirudh south indian bollywood official video', limit);
         if (yt.length > 0) return yt;
-      } else {
-        const third = Math.ceil(limit / 3);
-        const [mal, eng, vir] = await Promise.all([
-          searchYouTube('latest trending malayalam songs official video', third),
-          searchYouTube('trending english songs billboard hot official video', third),
-          searchYouTube('trending viral songs anirudh south indian bollywood official video', third),
-        ]);
-        const blended = [...mal, ...eng, ...vir];
-        if (blended.length > 0) return blended.slice(0, limit);
       }
     } catch (err) {
       console.warn('Error fetching YouTube trending category:', err);
     }
+
     return this.getTrending(limit);
   }
 
@@ -69,10 +66,10 @@ export class MusicProviderService {
       const cleanTitle = currentTrack.title.replace(/[\(\[\{].*?[\)\]\}]/g, '').trim();
 
       const ytQueries: Promise<Track[]>[] = [
-        searchYouTube(`${cleanArtist} malayalam songs official video`, 12),
-        searchYouTube('latest trending malayalam songs official video', 15),
-        searchYouTube('top hit malayalam movie video songs', 12),
-        searchYouTube('malayalam cinema melodies official video', 10),
+        searchSaavnTracks(`${cleanArtist} Malayalam`, 10),
+        searchSaavnTracks('Trending Malayalam', 10),
+        searchYouTube(`${cleanArtist} malayalam songs official video`, 8),
+        searchYouTube('latest trending malayalam songs official video', 10),
       ];
 
       if (cleanTitle.length > 3) {
@@ -106,7 +103,8 @@ export class MusicProviderService {
     // For other genres (e.g. English Pop, Electronic, Rock), query YouTube + tailored seeds
     const profile = getSonicProfileForTrack(currentTrack.title, currentTrack.artist, currentTrack.genre);
     const queries: Promise<Track[]>[] = [
-      searchYouTube(`${currentTrack.artist} songs official video`, 10),
+      searchSaavnTracks(`${currentTrack.artist}`, 10),
+      searchYouTube(`${currentTrack.artist} songs official video`, 8),
     ];
 
     if (profile.searchSeeds && profile.searchSeeds.length > 0) {
@@ -156,15 +154,25 @@ export class MusicProviderService {
       return { tracks: [], artists: [], albums: [], playlists: [] };
     }
 
-    // 1. Search YouTube catalog
-    let youtubeResults: Track[] = [];
+    // 1. Search high-fidelity studio master catalog first (official clean titles, 320kbps MP4)
+    let saavnResults: Track[] = [];
     try {
-      youtubeResults = await searchYouTube(query, limit);
+      saavnResults = await searchSaavnTracks(query, limit);
     } catch (err) {
-      console.warn('YouTube search error:', err);
+      console.warn('Saavn search error:', err);
     }
 
-    // 2. Search local seed tracks
+    // 2. Search YouTube catalog for rare indie / cover tracks not in studio catalog
+    let youtubeResults: Track[] = [];
+    if (saavnResults.length < limit) {
+      try {
+        youtubeResults = await searchYouTube(query, Math.ceil(limit / 2));
+      } catch (err) {
+        console.warn('YouTube search error:', err);
+      }
+    }
+
+    // 3. Search local seed tracks
     const matchedSeedTracks = SEED_TRACKS.filter(t => 
       t.title.toLowerCase().includes(qLower) ||
       t.artist.toLowerCase().includes(qLower) ||
@@ -173,7 +181,7 @@ export class MusicProviderService {
       t.moods?.some(m => m.toLowerCase().includes(qLower))
     );
 
-    // 3. Search Audius live catalog
+    // 4. Search Audius live catalog
     let audiusResults: Track[] = [];
     try {
       audiusResults = await searchAudiusTracks(query, limit);
@@ -181,19 +189,9 @@ export class MusicProviderService {
       console.warn('Audius search error:', err);
     }
 
-    // 4. Search Jamendo if configured
-    let jamendoResults: Track[] = [];
-    if (isJamendoConfigured()) {
-      try {
-        jamendoResults = await searchJamendo(query, limit);
-      } catch (err) {
-        console.warn('Jamendo search error:', err);
-      }
-    }
-
-    // Deduplicate tracks by id and title+artist
+    // Deduplicate tracks by id and title+artist (favoring Saavn's clean official releases)
     const trackMap = new Map<string, Track>();
-    for (const t of [...youtubeResults, ...matchedSeedTracks, ...audiusResults, ...jamendoResults]) {
+    for (const t of [...saavnResults, ...matchedSeedTracks, ...youtubeResults, ...audiusResults]) {
       const key = `${t.title.toLowerCase()} - ${t.artist.toLowerCase()}`;
       if (!trackMap.has(key)) {
         trackMap.set(key, t);

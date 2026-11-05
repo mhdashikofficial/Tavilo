@@ -909,6 +909,7 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
         })();
       } else {
         isUserPausedRef.current = false;
+        enableWebAudioKeepAlive();
 
         // Stop YouTube player if playing
         if (isYtReadyRef.current && ytPlayerRef.current) {
@@ -917,8 +918,9 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
           } catch {}
         }
 
-        // Play HTML5 audio
+        // Play HTML5 audio directly
         if (audioRef.current) {
+          isNativeAudioStreamRef.current = true;
           audioRef.current.loop = false;
           audioRef.current.src = track.streamUrl;
           audioRef.current.volume = volume;

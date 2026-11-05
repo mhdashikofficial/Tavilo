@@ -200,13 +200,13 @@ export default function HomePage() {
             <div>
               <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-tavilo-surface/80 border border-tavilo-green/30 text-[11px] font-bold text-tavilo-green mb-3">
                 <span className="w-2 h-2 rounded-full bg-tavilo-green animate-pulse" />
-                <span>YOUTUBE MUSIC STREAMING</span>
+                <span>STUDIO HI-FI STREAMING</span>
               </div>
               <h1 className="text-2xl sm:text-4xl lg:text-5xl font-black text-white tracking-tight">
                 {greeting}
               </h1>
               <p className="text-xs sm:text-sm text-tavilo-text-secondary mt-2 max-w-xl">
-                Real YouTube hits, intelligent auto-discovery, and zero ads. Your sound. Your world.
+                Official studio masters, 320kbps lossless MP4 streams, and zero ads. Your sound. Your world.
               </p>
             </div>
 
@@ -295,8 +295,8 @@ export default function HomePage() {
                     <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight">
                       Trending Malayalam Hits
                     </h2>
-                    <span className="px-2 py-0.5 rounded-full bg-red-950/70 border border-red-500/30 text-[10px] font-bold text-red-400 uppercase tracking-wide">
-                      YouTube Top
+                    <span className="px-2 py-0.5 rounded-full bg-emerald-950/70 border border-emerald-500/30 text-[10px] font-bold text-emerald-400 uppercase tracking-wide">
+                      Top 50 Superhits
                     </span>
                   </div>
                   <p className="text-xs text-tavilo-text-secondary">
@@ -358,8 +358,8 @@ export default function HomePage() {
                     <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight">
                       Global English Chartbusters
                     </h2>
-                    <span className="px-2 py-0.5 rounded-full bg-red-950/70 border border-red-500/30 text-[10px] font-bold text-red-400 uppercase tracking-wide">
-                      Billboard Viral
+                    <span className="px-2 py-0.5 rounded-full bg-blue-950/70 border border-blue-500/30 text-[10px] font-bold text-blue-400 uppercase tracking-wide">
+                      Global Top Hits
                     </span>
                   </div>
                   <p className="text-xs text-tavilo-text-secondary">
@@ -421,8 +421,8 @@ export default function HomePage() {
                     <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight">
                       Trending Viral Bangers
                     </h2>
-                    <span className="px-2 py-0.5 rounded-full bg-red-950/70 border border-red-500/30 text-[10px] font-bold text-red-400 uppercase tracking-wide">
-                      YouTube Trending
+                    <span className="px-2 py-0.5 rounded-full bg-purple-950/70 border border-purple-500/30 text-[10px] font-bold text-purple-400 uppercase tracking-wide">
+                      Viral Charts
                     </span>
                   </div>
                   <p className="text-xs text-tavilo-text-secondary">
