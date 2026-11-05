@@ -328,30 +328,20 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
     };
 
     const handleCanPlay = () => {
-      if (!isFallbackIframeRef.current) {
-        setIsLoading(false);
+      setIsLoading(false);
+      if (!isUserPausedRef.current && audio.paused) {
+        audio.play().then(() => setIsPlaying(true)).catch(() => {});
       }
     };
 
     const handleError = (e: any) => {
-      if (!isFallbackIframeRef.current && currentTrack?.providerId === 'youtube' && isYtReadyRef.current && ytPlayerRef.current) {
-        console.warn('Native audio stream error, falling back to YouTube embedded player:', e);
-        isFallbackIframeRef.current = true;
-        try {
-          ytPlayerRef.current.loadVideoById(currentTrack.streamUrl);
-          ytPlayerRef.current.playVideo();
-          setIsPlaying(true);
-          return;
-        } catch {}
-      }
-
       console.error('Audio playback error:', e);
       setIsLoading(false);
       setIsPlaying(false);
-      setError('Playback error. Trying next available track...');
+      setError('Playback error. Loading next track...');
       setTimeout(() => {
         nextRef.current();
-      }, 1500);
+      }, 1200);
     };
 
     audio.addEventListener('timeupdate', handleTimeUpdate);
@@ -751,7 +741,6 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
         audioRef.current.loop = false;
         audioRef.current.src = streamSource;
         audioRef.current.volume = isMuted ? 0 : volume;
-        audioRef.current.currentTime = 0;
         audioRef.current
           .play()
           .then(() => {
@@ -760,17 +749,7 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
             requestWakeLock();
           })
           .catch(err => {
-            console.warn('Playback initiation prevented or failed:', err);
-            // Iframe fallback for YouTube if native playback was prevented
-            if (track.providerId === 'youtube' && isYtReadyRef.current && ytPlayerRef.current) {
-              isFallbackIframeRef.current = true;
-              try {
-                ytPlayerRef.current.loadVideoById(track.streamUrl);
-                ytPlayerRef.current.playVideo();
-                setIsPlaying(true);
-                requestWakeLock();
-              } catch {}
-            }
+            console.warn('Direct stream initiation buffering or delayed:', err);
             setIsLoading(false);
           });
       }

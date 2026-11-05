@@ -17,6 +17,10 @@ const formatCache = new Map<string, CachedFormat>();
 // Global Ytdl instance
 const ytdl = new Ytdl();
 
+// 1 MB chunk window: provides ~1-1.5 minutes of audio per request.
+// Downloads in ~50-150ms on cloud networks, completely immune to serverless 10s timeouts.
+const CHUNK_SIZE = 1024 * 1024; // 1 MB
+
 async function resolveAudioStream(videoId: string): Promise<CachedFormat | null> {
   const now = Date.now();
   const cached = formatCache.get(videoId);
@@ -49,7 +53,6 @@ async function resolveAudioStream(videoId: string): Promise<CachedFormat | null>
       return null;
     }
 
-    // GoogleVideo URLs usually expire in 6 hours; cache for 4 hours
     const entry: CachedFormat = {
       url: selectedFormat.url,
       mimeType: selectedFormat.mimeType ? selectedFormat.mimeType.split(';')[0] : 'audio/mp4',
@@ -79,16 +82,30 @@ export async function GET(req: NextRequest) {
   }
 
   const clientRange = req.headers.get('range');
+  let start = 0;
+  let end: number | undefined;
+  const total = streamInfo.contentLength;
+
+  if (clientRange) {
+    const parts = clientRange.replace(/bytes=/, '').split('-');
+    start = parseInt(parts[0], 10) || 0;
+    if (parts[1]) {
+      end = parseInt(parts[1], 10);
+    } else {
+      end = total ? Math.min(start + CHUNK_SIZE - 1, total - 1) : start + CHUNK_SIZE - 1;
+    }
+  } else {
+    // If no range header, send the first 1MB chunk to let mobile players start immediately
+    end = total ? Math.min(CHUNK_SIZE - 1, total - 1) : CHUNK_SIZE - 1;
+  }
+
   const upstreamHeaders: Record<string, string> = {
     'User-Agent':
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     Accept: '*/*',
     'Accept-Encoding': 'identity',
+    Range: `bytes=${start}-${end}`,
   };
-
-  if (clientRange) {
-    upstreamHeaders['Range'] = clientRange;
-  }
 
   let upstreamRes = await fetch(streamInfo.url, {
     headers: upstreamHeaders,
@@ -123,6 +140,8 @@ export async function GET(req: NextRequest) {
   const contentRange = upstreamRes.headers.get('content-range');
   if (contentRange) {
     responseHeaders.set('Content-Range', contentRange);
+  } else if (total) {
+    responseHeaders.set('Content-Range', `bytes ${start}-${end}/${total}`);
   }
 
   const contentLength = upstreamRes.headers.get('content-length');
@@ -131,7 +150,7 @@ export async function GET(req: NextRequest) {
   }
 
   return new Response(upstreamRes.body, {
-    status: upstreamRes.status,
+    status: upstreamRes.status === 200 && clientRange ? 206 : upstreamRes.status,
     headers: responseHeaders,
   });
 }
