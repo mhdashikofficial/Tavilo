@@ -97,6 +97,7 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
   const ytPlayerRef = useRef<any>(null);
   const isYtReadyRef = useRef<boolean>(false);
   const pendingYtVideoIdRef = useRef<string | null>(null);
+  const isNativeAudioStreamRef = useRef<boolean>(false);
 
   // Tracks whether the pause was user-initiated or triggered by OS screen-off/backgrounding
   const isUserPausedRef = useRef<boolean>(false);
@@ -265,14 +266,14 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
     } catch {}
 
     const handleTimeUpdate = () => {
-      if (!currentTrack || currentTrack.providerId !== 'youtube') {
+      if (isNativeAudioStreamRef.current || !currentTrack || currentTrack.providerId !== 'youtube') {
         setCurrentTime(audio.currentTime);
         listenSecondsRef.current += 0.25;
       }
     };
 
     const handleDurationChange = () => {
-      if (!currentTrack || currentTrack.providerId !== 'youtube') {
+      if (isNativeAudioStreamRef.current || !currentTrack || currentTrack.providerId !== 'youtube') {
         if (!isNaN(audio.duration) && audio.duration > 0) {
           setDuration(audio.duration);
         }
@@ -281,7 +282,7 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
 
     const handlePlaying = () => {
       consecutiveErrorsRef.current = 0;
-      if (!currentTrack || currentTrack.providerId !== 'youtube') {
+      if (isNativeAudioStreamRef.current || !currentTrack || currentTrack.providerId !== 'youtube') {
         setIsPlaying(true);
         setIsLoading(false);
         setError(null);
@@ -761,8 +762,48 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
         })();
       }
 
-      // Check whether track is a YouTube video or an audio stream
-      if (track.providerId === 'youtube') {
+      const streamApiUrl = process.env.NEXT_PUBLIC_STREAM_API_URL?.trim();
+
+      // If Koyeb yt-dlp native audio microservice is configured, stream audio natively via HTML5 audio element
+      if (track.providerId === 'youtube' && streamApiUrl) {
+        isUserPausedRef.current = false;
+        isNativeAudioStreamRef.current = true;
+        enableWebAudioKeepAlive();
+
+        // Pause YouTube iframe if it was active
+        if (isYtReadyRef.current && ytPlayerRef.current) {
+          try {
+            ytPlayerRef.current.pauseVideo();
+          } catch {}
+        }
+
+        const videoId = track.streamUrl.replace('yt-', '');
+        const directAudioUrl = `${streamApiUrl.replace(/\/$/, '')}/stream?id=${videoId}`;
+
+        if (audioRef.current) {
+          audioRef.current.loop = false;
+          audioRef.current.src = directAudioUrl;
+          audioRef.current.volume = volume;
+          audioRef.current.currentTime = 0;
+          audioRef.current
+            .play()
+            .then(() => {
+              setIsPlaying(true);
+              setIsLoading(false);
+              requestWakeLock();
+            })
+            .catch(err => {
+              console.warn('Microservice audio stream failed, falling back to YouTube player:', err);
+              isNativeAudioStreamRef.current = false;
+              if (isYtReadyRef.current && ytPlayerRef.current) {
+                ytPlayerRef.current.loadVideoById(videoId);
+                ytPlayerRef.current.playVideo();
+                setIsPlaying(true);
+              }
+            });
+        }
+      } else if (track.providerId === 'youtube') {
+        isNativeAudioStreamRef.current = false;
         isUserPausedRef.current = false;
         enableWebAudioKeepAlive();
 
@@ -836,7 +877,9 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
 
   const pause = () => {
     isUserPausedRef.current = true;
-    if (currentTrack?.providerId === 'youtube') {
+    if (isNativeAudioStreamRef.current && audioRef.current) {
+      audioRef.current.pause();
+    } else if (currentTrack?.providerId === 'youtube') {
       if (ytPlayerRef.current && isYtReadyRef.current) {
         try {
           ytPlayerRef.current.pauseVideo();
@@ -863,7 +906,15 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
   const resume = () => {
     isUserPausedRef.current = false;
     enableWebAudioKeepAlive();
-    if (currentTrack?.providerId === 'youtube') {
+    if (isNativeAudioStreamRef.current && audioRef.current) {
+      audioRef.current
+        .play()
+        .then(() => {
+          setIsPlaying(true);
+          requestWakeLock();
+        })
+        .catch(console.warn);
+    } else if (currentTrack?.providerId === 'youtube') {
       if (ytPlayerRef.current && isYtReadyRef.current) {
         try {
           ytPlayerRef.current.playVideo();
@@ -897,7 +948,11 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
   };
 
   const seek = (seconds: number) => {
-    if (currentTrack?.providerId === 'youtube') {
+    if (isNativeAudioStreamRef.current && audioRef.current) {
+      audioRef.current.currentTime = seconds;
+      currentTimeRef.current = seconds;
+      setCurrentTime(seconds);
+    } else if (currentTrack?.providerId === 'youtube') {
       if (ytPlayerRef.current && isYtReadyRef.current) {
         try {
           ytPlayerRef.current.seekTo(seconds, true);
