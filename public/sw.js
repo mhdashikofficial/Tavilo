@@ -1,4 +1,4 @@
-const CACHE_NAME = 'tavilo-shell-v7';
+const CACHE_NAME = 'tavilo-shell-v9';
 const PRECACHE_ASSETS = [
   '/',
   '/manifest.webmanifest',
@@ -41,7 +41,11 @@ self.addEventListener('fetch', (event) => {
   if (
     event.request.method !== 'GET' ||
     url.pathname.endsWith('.mp3') ||
+    url.pathname.endsWith('.mp4') ||
+    url.pathname.endsWith('.m4a') ||
     url.pathname.endsWith('.ogg') ||
+    url.hostname.includes('saavncdn.com') ||
+    url.hostname.includes('jiosaavn.com') ||
     url.hostname.includes('jamendo.com') ||
     url.hostname.includes('archive.org') ||
     url.hostname.includes('youtube.com') ||
