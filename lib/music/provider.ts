@@ -263,7 +263,8 @@ export class MusicProviderService {
           const aLower = t.artist.toLowerCase();
           // Filter out low quality covers, altered remixes, or tribute labels for international searches
           if (/\b(remix|cover|karaoke|tribute|sped up|slowed|instrumental|inspired by|soundalike)\b/i.test(tLower)) return false;
-          if (/\b(tribute|karaoke|soundalike|cover pop|kreatell|new records|ns recording)\b/i.test(aLower)) return false;
+          if (/\b(tribute|karaoke|soundalike|cover pop|kreatell|new records|ns recording|maxence)\b/i.test(aLower)) return false;
+          if (/\b(kreatell|maxence|ns recording|new records|nmw rec)\b/i.test(t.licenseName || '') || /\b(kreatell|maxence)\b/i.test(t.album || '')) return false;
           return true;
         });
 

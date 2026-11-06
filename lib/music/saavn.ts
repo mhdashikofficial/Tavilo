@@ -63,6 +63,7 @@ export function isAuthenticSaavnSong(s: any, query?: string): boolean {
   const title = (s.song || s.title || '').toLowerCase();
   const artist = (s.primary_artists || s.more_info?.primary_artists || s.singers || '').toLowerCase();
   const album = (s.album || s.more_info?.album || '').toLowerCase();
+  const label = (s.label || s.copyright_text || s.more_info?.label || '').toLowerCase();
 
   // If user explicitly searched for tribute, karaoke, or remix, allow it
   const userWantsSpecial =
@@ -76,8 +77,13 @@ export function isAuthenticSaavnSong(s: any, query?: string): boolean {
     for (const fa of FAKE_ARTISTS) {
       if (artist.includes(fa)) return false;
     }
-    const combined = `${title} ${artist} ${album}`;
+    const combined = `${title} ${artist} ${album} ${label}`;
     if (FAKE_NOISE_REGEX.test(combined)) return false;
+
+    // Filter soundalike remake labels pretending to be original artists
+    if (/\b(kreatell|maxence|ns recording|nmw rec|tribute|soundalike|cover pop)\b/i.test(label)) {
+      return false;
+    }
 
     // Discard remixes or altered versions if user didn't ask for them
     if (/\b(remix|instrumental|restrung)\b/i.test(title)) return false;

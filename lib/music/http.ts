@@ -8,6 +8,12 @@ const httpsAgent = new https.Agent({
   timeout: 15000,
 });
 
+const httpAgent = new http.Agent({
+  keepAlive: true,
+  maxSockets: 50,
+  timeout: 15000,
+});
+
 export interface HttpResponse {
   status: number;
   headers: Record<string, string>;
@@ -17,8 +23,9 @@ export interface HttpResponse {
 }
 
 /**
- * Enforces HTTP/1.1 for YouTube requests to prevent Node.js undici
+ * Enforces HTTP/1.1 for YouTube and media requests to prevent Node.js undici
  * ERR_HTTP2_SESSION_ERROR: Session closed with error code 11 (GOAWAY ENHANCE_YOUR_CALM).
+ * Automatically handles HTTP 301/302/307/308 redirects with Range and headers preserved.
  */
 export function requestHttp1(
   url: string,
@@ -27,8 +34,11 @@ export function requestHttp1(
     headers?: Record<string, string>;
     body?: string | Buffer;
     timeout?: number;
+    redirectsRemaining?: number;
   } = {}
 ): Promise<HttpResponse> {
+  const maxRedirects = options.redirectsRemaining !== undefined ? options.redirectsRemaining : 5;
+
   return new Promise((resolve, reject) => {
     try {
       const parsedUrl = new URL(url);
@@ -36,7 +46,7 @@ export function requestHttp1(
       const transport = isHttps ? https : http;
 
       const headers: Record<string, string | number> = {
-        'Accept': '*/*',
+        Accept: '*/*',
         ...(options.headers || {}),
       };
 
@@ -49,7 +59,7 @@ export function requestHttp1(
         {
           method: options.method || 'GET',
           headers,
-          agent: isHttps ? httpsAgent : undefined,
+          agent: isHttps ? httpsAgent : httpAgent,
           timeout: options.timeout || 15000,
         },
         (res) => {
@@ -61,6 +71,24 @@ export function requestHttp1(
             } else if (v !== undefined) {
               flatHeaders[k.toLowerCase()] = v;
             }
+          }
+
+          // Handle automatic redirect following (301, 302, 303, 307, 308)
+          if (
+            (status === 301 || status === 302 || status === 303 || status === 307 || status === 308) &&
+            flatHeaders['location'] &&
+            maxRedirects > 0
+          ) {
+            // Drain stream before redirecting
+            res.resume();
+            const redirectUrl = new URL(flatHeaders['location'], parsedUrl).toString();
+            return resolve(
+              requestHttp1(redirectUrl, {
+                ...options,
+                method: status === 303 ? 'GET' : options.method || 'GET',
+                redirectsRemaining: maxRedirects - 1,
+              })
+            );
           }
 
           let bodyReadPromise: Promise<string> | null = null;

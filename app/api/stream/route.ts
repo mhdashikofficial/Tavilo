@@ -72,11 +72,57 @@ async function resolveYouTubeAudioStream(videoId: string): Promise<{ url: string
     urlCache.delete(videoId);
   }
 
-  let debugLog: any = {};
+  // Strategy 1: Multi-instance Invidious Resolver (Bypasses Datacenter IP restrictions with pre-signed PO tokens & ipbypass)
+  const invidiousHosts = [
+    'https://yt.chocolatemoo53.com',
+    'https://invidious.nerdvpn.de',
+    'https://inv.nadeko.net',
+    'https://invidious.tiekoetter.com',
+  ];
+
+  for (const host of invidiousHosts) {
+    try {
+      const res = await requestHttp1(`${host}/api/v1/videos/${videoId}`, {
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        },
+        timeout: 6000,
+      });
+
+      if (res.status === 200) {
+        const data = await res.json();
+        const formats = (data.adaptiveFormats || []).filter(
+          (f: any) => f.type?.includes('audio') && f.url
+        );
+
+        if (formats.length > 0) {
+          const target =
+            formats.find((f: any) => f.itag === 140 || f.itag === '140') ||
+            formats.find((f: any) => f.type?.includes('audio/mp4')) ||
+            formats[0];
+
+          if (target?.url) {
+            const mime = target.type?.split(';')[0].trim() || 'audio/mp4';
+            urlCache.set(videoId, {
+              url: target.url,
+              mimeType: mime,
+              expires: Date.now() + 4 * 60 * 60 * 1000,
+            });
+            return { url: target.url, mimeType: mime };
+          }
+        }
+      }
+    } catch (err: any) {
+      console.warn(`Invidious extraction error via ${host} for ${videoId}:`, err?.message);
+    }
+  }
+
+  const debugLog: any = {};
   const visitorData = await getVisitorData();
   debugLog.visitorDataLength = visitorData.length;
 
-  // Strategy 1: YouTube Innertube VisionOS Client over HTTP/1.1
+  // Strategy 2: YouTube Innertube VisionOS Client over HTTP/1.1
   try {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
