@@ -880,6 +880,48 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
 
           if (playRequestIdRef.current !== currentRequestId) return;
 
+          // Attempt 2: Native HTML5 Audio Streaming via /api/stream
+          // Streams the 100% original copy directly from YouTube as native audio.
+          // Native HTML5 audio works 100% in background, on minimize, and with screen locked!
+          try {
+            if (audioRef.current) {
+              if (isYtReadyRef.current && ytPlayerRef.current) {
+                try {
+                  ytPlayerRef.current.pauseVideo();
+                } catch {}
+              }
+
+              const nativeStreamUrl = `/api/stream?id=${encodeURIComponent(videoId)}`;
+              isNativeAudioStreamRef.current = true;
+              audioRef.current.loop = false;
+              audioRef.current.src = nativeStreamUrl;
+              audioRef.current.volume = volume;
+              await audioRef.current.play();
+
+              if (playRequestIdRef.current !== currentRequestId) return;
+              setIsPlaying(true);
+              setIsLoading(false);
+              requestWakeLock();
+
+              if ('mediaSession' in navigator) {
+                navigator.mediaSession.metadata = new MediaMetadata({
+                  title: track.title,
+                  artist: track.artist,
+                  album: track.album,
+                  artwork: [
+                    { src: track.artwork, sizes: '512x512', type: 'image/jpeg' },
+                  ],
+                });
+                navigator.mediaSession.playbackState = 'playing';
+              }
+              return;
+            }
+          } catch (err) {
+            console.warn('Native HTML5 /api/stream failed, falling back to YouTube iframe:', err);
+          }
+
+          if (playRequestIdRef.current !== currentRequestId) return;
+
           // Fallback to YouTube iframe player if native stream is not found
           isNativeAudioStreamRef.current = false;
           if (audioRef.current) {

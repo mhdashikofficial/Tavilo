@@ -48,6 +48,13 @@ const FAKE_ARTISTS = [
   'sound-a-like',
   'soundalike',
   'tribute band',
+  'tribute to',
+  'hello i\'m',
+  'hello im',
+  'the tribute',
+  'impersonator',
+  'backing tracks',
+  'cover band',
 ];
 
 export function isAuthenticSaavnSong(s: any, query?: string): boolean {
