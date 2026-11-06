@@ -72,6 +72,7 @@ async function resolveYouTubeAudioStream(videoId: string): Promise<{ url: string
   }
 
   // Strategy 1: Official YouTube Innertube Android Client over HTTP/1.1 (Returns direct GoogleVideo stream URLs)
+  let debugInfo: any = {};
   try {
     const innertubeBody = JSON.stringify({
       context: {
@@ -100,8 +101,12 @@ async function resolveYouTubeAudioStream(videoId: string): Promise<{ url: string
       }
     );
 
+    debugInfo.playerStatus = res.status;
     if (res.status === 200) {
       const data = await res.json();
+      debugInfo.playabilityStatus = data.playabilityStatus;
+      debugInfo.hasStreamingData = !!data.streamingData;
+      debugInfo.adaptiveFormatsCount = (data.streamingData?.adaptiveFormats || []).length;
       if (data.playabilityStatus?.status === 'OK') {
         const formats = (data.streamingData?.adaptiveFormats || []).filter(
           (f: any) => f.mimeType?.includes('audio') && f.url
@@ -123,8 +128,11 @@ async function resolveYouTubeAudioStream(videoId: string): Promise<{ url: string
           }
         }
       }
+    } else {
+      debugInfo.playerBody = await res.text();
     }
   } catch (err: any) {
+    debugInfo.fetchError = err?.message;
     console.warn(`Innertube player extraction error for ${videoId}:`, err?.message);
   }
 
@@ -141,10 +149,11 @@ async function resolveYouTubeAudioStream(videoId: string): Promise<{ url: string
       return { url: cliUrl, mimeType: mime };
     }
   } catch (cliErr: any) {
+    debugInfo.cliError = cliErr?.message;
     console.warn(`CLI yt-dlp fallback unavailable for ${videoId}:`, cliErr?.message);
   }
 
-  throw new Error(`Unable to resolve authentic YouTube audio stream for ${videoId}`);
+  throw new Error(`Unable to resolve authentic YouTube audio stream for ${videoId}: ${JSON.stringify(debugInfo)}`);
 }
 
 export async function GET(req: NextRequest) {
