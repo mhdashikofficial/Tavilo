@@ -169,13 +169,22 @@ export async function searchSaavnTracks(query: string, limit: number = 20): Prom
     // Filter authentic tracks first
     const authenticItems = rawResults.filter((item: any) => isAuthenticSaavnSong(item, query));
 
+    // If query mentions an artist name, prioritize candidates whose artist matches the query words
+    const qLower = query.toLowerCase().trim();
+    const artistMatches = authenticItems.filter((item: any) => {
+      const art = (item.primary_artists || item.singers || item.more_info?.primary_artists || '').toLowerCase();
+      const artWords = art.split(/[,\s]+/).filter((w: string) => w.length > 2);
+      return artWords.some((w: string) => qLower.includes(w));
+    });
+    const candidatePool = artistMatches.length > 0 ? artistMatches : authenticItems;
+
     // Smart relevance sorting:
     // 1) Matching artist name from search query
     // 2) Exact title match
     // 3) Clean title (no noise/parentheses)
     // 4) Highest play count descending
-    const queryWords = query.toLowerCase().split(/\s+/).filter((w) => w.length > 2);
-    authenticItems.sort((a: any, b: any) => {
+    const queryWords = qLower.split(/\s+/).filter((w) => w.length > 2);
+    candidatePool.sort((a: any, b: any) => {
       const aArtist = (a.primary_artists || a.singers || a.more_info?.primary_artists || '').toLowerCase();
       const bArtist = (b.primary_artists || b.singers || b.more_info?.primary_artists || '').toLowerCase();
 
@@ -199,7 +208,7 @@ export async function searchSaavnTracks(query: string, limit: number = 20): Prom
     });
 
     const tracks: Track[] = [];
-    for (const item of authenticItems) {
+    for (const item of candidatePool) {
       const track = mapSaavnSongToTrack(item);
       if (track && !tracks.some((t) => t.id === track.id)) {
         tracks.push(track);
