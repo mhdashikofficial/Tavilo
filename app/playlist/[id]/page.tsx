@@ -9,7 +9,7 @@ import { TopBar } from '@/components/navigation/TopBar';
 import { TrackRow } from '@/components/music/TrackRow';
 import { useLibrary } from '@/lib/library/LibraryContext';
 import { usePlayback } from '@/lib/playback/PlaybackContext';
-import { CURATED_PLAYLISTS } from '@/lib/music/seed';
+import { CURATED_PLAYLISTS, SEED_TRACKS } from '@/lib/music/seed';
 import { Track, Playlist } from '@/types/music';
 
 export default function PlaylistDetailPage() {
@@ -29,20 +29,21 @@ export default function PlaylistDetailPage() {
   useEffect(() => {
     // 0. Liked Songs Auto Collection
     if (isLikedPlaylist) {
+      const activeList = likedTracks.length > 0 ? likedTracks : SEED_TRACKS;
       const likedPlaylist: Playlist = {
         id: 'liked',
         title: 'Liked Songs',
         description: 'Your favorite tracks saved across Tavilo. Official studio masters & authentic copies.',
         artwork:
-          likedTracks[0]?.artwork ||
+          activeList[0]?.artwork ||
           'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=500&auto=format&fit=crop&q=80',
-        tracks: likedTracks,
-        trackCount: likedTracks.length,
+        tracks: activeList,
+        trackCount: activeList.length,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
       setActivePlaylist(likedPlaylist);
-      setPlaylistTracks(likedTracks);
+      setPlaylistTracks(activeList);
       return;
     }
 
@@ -91,15 +92,16 @@ export default function PlaylistDetailPage() {
   // Keep liked tracks list synchronized in real time if user unlikes/likes tracks while viewing
   useEffect(() => {
     if (isLikedPlaylist) {
-      setPlaylistTracks(likedTracks);
+      const activeList = likedTracks.length > 0 ? likedTracks : SEED_TRACKS;
+      setPlaylistTracks(activeList);
       setActivePlaylist((prev) =>
         prev
           ? {
               ...prev,
-              tracks: likedTracks,
-              trackCount: likedTracks.length,
+              tracks: activeList,
+              trackCount: activeList.length,
               artwork:
-                likedTracks[0]?.artwork ||
+                activeList[0]?.artwork ||
                 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=500&auto=format&fit=crop&q=80',
             }
           : null

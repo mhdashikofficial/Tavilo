@@ -869,25 +869,7 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
               return;
             }
           } catch (err) {
-            console.warn('Native HTML5 /api/stream initial playback error, retrying fallback studio stream:', err);
-            // Secondary Audio Fallback: Direct studio resolver (keeps playback 100% native HTML5 audio!)
-            try {
-              const res = await fetch(`/api/audio?title=${encodeURIComponent(track.title)}&artist=${encodeURIComponent(track.artist)}`);
-              if (res.ok) {
-                const data = await res.json();
-                if (data.streamUrl && audioRef.current) {
-                  audioRef.current.src = data.streamUrl;
-                  await audioRef.current.play();
-                  if (playRequestIdRef.current !== currentRequestId) return;
-                  setIsPlaying(true);
-                  setIsLoading(false);
-                  requestWakeLock();
-                  return;
-                }
-              }
-            } catch (fallbackErr) {
-              console.warn('Fallback studio stream error:', fallbackErr);
-            }
+            console.warn('Native HTML5 /api/stream playback error:', err);
           }
 
           if (playRequestIdRef.current !== currentRequestId) return;

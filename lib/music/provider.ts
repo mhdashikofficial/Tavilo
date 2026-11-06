@@ -24,6 +24,9 @@ function normalizeSearchQuery(query: string): string {
   // Split common joined artist names if user typed without spaces
   const joinedFixes: [RegExp, string][] = [
     [/\balanwalker\b/gi, 'alan walker'],
+    [/\btheweeknd\b/gi, 'the weeknd'],
+    [/\bdualipa\b/gi, 'dua lipa'],
+    [/\bimaginedragons\b/gi, 'imagine dragons'],
     [/\btaylorswift\b/gi, 'taylor swift'],
     [/\bedsheeran\b/gi, 'ed sheeran'],
     [/\bjustinbieber\b/gi, 'justin bieber'],
@@ -36,6 +39,8 @@ function normalizeSearchQuery(query: string): string {
     [/\bladygaga\b/gi, 'lady gaga'],
     [/\bbritneyspears\b/gi, 'britney spears'],
     [/\bbrunomars\b/gi, 'bruno mars'],
+    [/\barianagrande\b/gi, 'ariana grande'],
+    [/\bthechainsmokers\b/gi, 'the chainsmokers'],
     [/\barjit\b/gi, 'arijit'],
     [/\bsushinshyam\b/gi, 'sushin shyam'],
   ];
@@ -251,14 +256,33 @@ export class MusicProviderService {
     // If query is for Indian/regional music (Malayalam, Tamil, Hindi, etc.), prioritize Saavn's Indian studio masters.
     // If query is for English/International music (e.g. "alanwalker faded", "coldplay", "adele", "faded", etc.),
     // prioritize YouTube's official original releases so the user gets the 100% genuine original copy!
+    const filteredSaavn = isIndian
+      ? saavnResults
+      : saavnResults.filter((t) => {
+          const tLower = t.title.toLowerCase();
+          const aLower = t.artist.toLowerCase();
+          // Filter out low quality covers, altered remixes, or tribute labels for international searches
+          if (/\b(remix|cover|karaoke|tribute|sped up|slowed|instrumental|inspired by|soundalike)\b/i.test(tLower)) return false;
+          if (/\b(tribute|karaoke|soundalike|cover pop|kreatell|new records|ns recording)\b/i.test(aLower)) return false;
+          return true;
+        });
+
     const prioritizedSources = isIndian
       ? [...saavnResults, ...youtubeResults, ...matchedSeedTracks, ...audiusResults]
-      : [...youtubeResults, ...saavnResults, ...matchedSeedTracks, ...audiusResults];
+      : [...youtubeResults, ...filteredSaavn, ...matchedSeedTracks, ...audiusResults];
 
-    // Deduplicate tracks by normalized title + artist
+    // Deduplicate tracks by normalized title + artist (stripping noise like "Official Video", "(Audio)", etc.)
     const trackMap = new Map<string, Track>();
     for (const t of prioritizedSources) {
-      const normKey = `${t.title.toLowerCase().replace(/[^a-z0-9]/g, '')}-${t.artist.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
+      const cleanTitle = t.title
+        .toLowerCase()
+        .replace(/\s*[\(\[\{].*?[\)\]\}]\s*/g, '')
+        .replace(/[^a-z0-9]/g, '');
+      const cleanArtist = t.artist
+        .toLowerCase()
+        .replace(/\s*[\(\[\{].*?[\)\]\}]\s*/g, '')
+        .replace(/[^a-z0-9]/g, '');
+      const normKey = `${cleanTitle}-${cleanArtist}`;
       if (!trackMap.has(normKey)) {
         trackMap.set(normKey, t);
       }

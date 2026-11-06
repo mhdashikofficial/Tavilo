@@ -9,7 +9,7 @@ const STORAGE_KEY_CUSTOM_PLAYLISTS = 'tavilo_user_custom_playlists_v4';
 const STORAGE_KEY_LIKED_ENTITIES = 'tavilo_liked_entities_v4';
 
 const DEFAULT_PREFERENCES: UserPreferences = {
-  likedTrackIds: [SEED_TRACKS[0].id, SEED_TRACKS[1].id],
+  likedTrackIds: SEED_TRACKS.map((t) => t.id),
   dislikedTrackIds: [],
   excludedTrackIds: [],
   excludedArtistNames: [],

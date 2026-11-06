@@ -70,7 +70,97 @@ function cleanTitleAndArtist(rawTitle: string, channelName: string): { artist: s
   };
 }
 
+function parseSectionListToTracks(sectionList: any[], query: string, limit: number): Track[] {
+  const tracks: Track[] = [];
+
+  for (const section of sectionList) {
+    const itemSectionContents = section.itemSectionRenderer?.contents;
+    if (!Array.isArray(itemSectionContents)) continue;
+
+    for (const item of itemSectionContents) {
+      if (!item.videoRenderer) continue;
+      const vr = item.videoRenderer;
+      const videoId = vr.videoId;
+      if (!videoId) continue;
+
+      const rawTitle = vr.title?.runs?.[0]?.text || vr.title?.simpleText || 'Untitled Track';
+      const channel = vr.ownerText?.runs?.[0]?.text || 'YouTube Artist';
+      const durationStr = vr.lengthText?.simpleText;
+      const duration = parseDuration(durationStr);
+
+      // Skip long compilations/podcasts when searching songs
+      if (duration > 1200) continue;
+
+      const { artist, title } = cleanTitleAndArtist(rawTitle, channel);
+      const artwork = `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+      const isMalayalam = isMalayalamTrack({ title, artist }) || query.toLowerCase().includes('malayalam');
+
+      tracks.push({
+        id: `yt-${videoId}`,
+        providerId: 'youtube',
+        providerName: 'YouTube Official',
+        title,
+        artist,
+        artists: [artist],
+        album: isMalayalam ? 'Malayalam Hits' : 'YouTube Original Release',
+        artwork,
+        duration,
+        streamUrl: videoId,
+        playbackCapability: 'playable',
+        playbackSource: 'Original Master Audio',
+        licenseName: 'YouTube Standard License',
+        licenseUrl: 'https://www.youtube.com/t/terms',
+        genre: isMalayalam ? 'Malayalam' : 'Music',
+        genres: isMalayalam ? ['Malayalam', 'Soundtrack'] : ['Music'],
+      });
+
+      if (tracks.length >= limit) break;
+    }
+    if (tracks.length >= limit) break;
+  }
+
+  return tracks;
+}
+
 export async function searchYouTube(query: string, limit: number = 20): Promise<Track[]> {
+  // Strategy 1: YouTube Official Innertube JSON Search API
+  // Structured, high-speed, never broken by HTML changes or datacenter IP blocks
+  try {
+    const innertubeRes = await fetch('https://www.youtube.com/youtubei/v1/search', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      },
+      body: JSON.stringify({
+        context: {
+          client: {
+            clientName: 'WEB',
+            clientVersion: '2.20231201.00.00',
+            hl: 'en',
+            gl: 'US',
+          },
+        },
+        query,
+      }),
+      cache: 'no-store',
+    });
+
+    if (innertubeRes.ok) {
+      const data = await innertubeRes.json();
+      const sectionList =
+        data.contents?.twoColumnSearchResultsRenderer?.primaryContents?.sectionListRenderer?.contents;
+      if (Array.isArray(sectionList)) {
+        const tracks = parseSectionListToTracks(sectionList, query, limit);
+        if (tracks.length > 0) return tracks;
+      }
+    }
+  } catch (err: any) {
+    console.warn('Innertube search failed, trying fallback parser:', err?.message);
+  }
+
+  // Strategy 2: HTML Scrape fallback with balanced JSON parser
   try {
     const res = await fetch(`https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`, {
       headers: {
@@ -82,7 +172,7 @@ export async function searchYouTube(query: string, limit: number = 20): Promise<
     });
 
     if (!res.ok) {
-      console.warn('YouTube search response status:', res.status);
+      console.warn('YouTube HTML search response status:', res.status);
       return [];
     }
 
@@ -109,9 +199,7 @@ export async function searchYouTube(query: string, limit: number = 20): Promise<
         if (jsonEnd !== -1) {
           try {
             data = JSON.parse(html.slice(jsonStart, jsonEnd));
-          } catch (e) {
-            console.warn('Failed to parse balanced JSON for ytInitialData:', e);
-          }
+          } catch {}
         }
       }
     }
@@ -125,62 +213,17 @@ export async function searchYouTube(query: string, limit: number = 20): Promise<
       }
     }
 
-    if (!data) return [];
-    const sectionList =
-      data.contents?.twoColumnSearchResultsRenderer?.primaryContents?.sectionListRenderer?.contents;
-    if (!sectionList || !Array.isArray(sectionList)) return [];
-
-    const tracks: Track[] = [];
-
-    for (const section of sectionList) {
-      const itemSectionContents = section.itemSectionRenderer?.contents;
-      if (!Array.isArray(itemSectionContents)) continue;
-
-      for (const item of itemSectionContents) {
-        if (!item.videoRenderer) continue;
-        const vr = item.videoRenderer;
-        const videoId = vr.videoId;
-        if (!videoId) continue;
-
-        const rawTitle = vr.title?.runs?.[0]?.text || vr.title?.simpleText || 'Untitled Track';
-        const channel = vr.ownerText?.runs?.[0]?.text || 'YouTube Artist';
-        const durationStr = vr.lengthText?.simpleText;
-        const duration = parseDuration(durationStr);
-
-        // Skip 1-hour/compilation videos if user is looking for songs (unless long duration requested)
-        if (duration > 1200) continue;
-
-        const { artist, title } = cleanTitleAndArtist(rawTitle, channel);
-        const artwork = `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
-        const isMalayalam = isMalayalamTrack({ title, artist }) || query.toLowerCase().includes('malayalam');
-
-        tracks.push({
-          id: `yt-${videoId}`,
-          providerId: 'youtube',
-          providerName: 'YouTube Official',
-          title,
-          artist,
-          artists: [artist],
-          album: isMalayalam ? 'Malayalam Hits' : 'YouTube Original Release',
-          artwork,
-          duration,
-          streamUrl: videoId, // YouTube video ID used by audio stream pipeline
-          playbackCapability: 'playable',
-          playbackSource: 'Original Master Audio',
-          licenseName: 'YouTube Standard License',
-          licenseUrl: 'https://www.youtube.com/t/terms',
-          genre: isMalayalam ? 'Malayalam' : 'Music',
-          genres: isMalayalam ? ['Malayalam', 'Soundtrack'] : ['Music'],
-        });
-
-        if (tracks.length >= limit) break;
+    if (data) {
+      const sectionList =
+        data.contents?.twoColumnSearchResultsRenderer?.primaryContents?.sectionListRenderer?.contents;
+      if (Array.isArray(sectionList)) {
+        return parseSectionListToTracks(sectionList, query, limit);
       }
-      if (tracks.length >= limit) break;
     }
 
-    return tracks;
+    return [];
   } catch (err) {
-    console.error('YouTube search error:', err);
+    console.error('YouTube search fallback error:', err);
     return [];
   }
 }
