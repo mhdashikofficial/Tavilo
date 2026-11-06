@@ -165,8 +165,23 @@ export async function searchSaavnTracks(query: string, limit: number = 20): Prom
     // Filter authentic tracks first
     const authenticItems = rawResults.filter((item: any) => isAuthenticSaavnSong(item, query));
 
-    // Sort: 1) Clean titles without noise/parentheses first, 2) Highest play count descending
+    // Smart relevance sorting:
+    // 1) Matching artist name from search query
+    // 2) Exact title match
+    // 3) Clean title (no noise/parentheses)
+    // 4) Highest play count descending
+    const queryWords = query.toLowerCase().split(/\s+/).filter((w) => w.length > 2);
     authenticItems.sort((a: any, b: any) => {
+      const aArtist = (a.primary_artists || a.singers || a.more_info?.primary_artists || '').toLowerCase();
+      const bArtist = (b.primary_artists || b.singers || b.more_info?.primary_artists || '').toLowerCase();
+
+      // Check if artist matches words in search query
+      const aArtistScore = queryWords.reduce((acc, w) => acc + (aArtist.includes(w) ? 2 : 0), 0);
+      const bArtistScore = queryWords.reduce((acc, w) => acc + (bArtist.includes(w) ? 2 : 0), 0);
+      if (aArtistScore !== bArtistScore) {
+        return bArtistScore - aArtistScore;
+      }
+
       const aTitle = a.song || a.title || '';
       const bTitle = b.song || b.title || '';
       const aClean = !aTitle.includes('(') && !aTitle.includes('[');
