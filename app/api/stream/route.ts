@@ -58,10 +58,9 @@ function resolveYouTubeViaCli(videoId: string): Promise<string> {
 }
 
 /**
- * High-speed native audio stream extractor using YouTube Innertube VisionOS Client API over HTTP/1.1.
- * VisionOS client requires zero JS deciphering, zero PO tokens, and returns direct unthrottled GoogleVideo audio streams.
- * Using HTTP/1.1 prevents Node.js undici ERR_HTTP2_SESSION_ERROR: Session closed with error code 11 (GOAWAY).
- * 100% pure HTTPS fetch — zero dependency on Python or external binaries.
+ * High-speed native audio stream extractor.
+ * Resolves genuine YouTube audio stream URLs (AAC / M4A) with pre-signed bypass tokens.
+ * Employs multi-instance failover to bypass datacenter IP restrictions.
  */
 async function resolveYouTubeAudioStream(videoId: string): Promise<{ url: string; mimeType: string }> {
   if (urlCache.has(videoId)) {
@@ -72,7 +71,7 @@ async function resolveYouTubeAudioStream(videoId: string): Promise<{ url: string
     urlCache.delete(videoId);
   }
 
-  // Strategy 1: Multi-instance Invidious Resolver (Bypasses Datacenter IP restrictions with pre-signed PO tokens & ipbypass)
+  // Strategy 1: Multi-instance Invidious Resolver (Pre-signed GoogleVideo playback tokens with ipbypass)
   const invidiousHosts = [
     'https://yt.chocolatemoo53.com',
     'https://invidious.nerdvpn.de',
@@ -118,9 +117,7 @@ async function resolveYouTubeAudioStream(videoId: string): Promise<{ url: string
     }
   }
 
-  const debugLog: any = {};
   const visitorData = await getVisitorData();
-  debugLog.visitorDataLength = visitorData.length;
 
   // Strategy 2: YouTube Innertube VisionOS Client over HTTP/1.1
   try {
@@ -170,20 +167,16 @@ async function resolveYouTubeAudioStream(videoId: string): Promise<{ url: string
       body: JSON.stringify(payload),
     });
 
-    debugLog.visionosStatus = res.status;
     if (res.status === 200) {
       const data = await res.json();
-      debugLog.visionosPlayability = data.playabilityStatus?.status;
-      debugLog.visionosReason = data.playabilityStatus?.reason;
       if (data.playabilityStatus?.status === 'OK') {
         const formats = (data.streamingData?.adaptiveFormats || []).filter(
           (f: any) => f.mimeType?.includes('audio') && f.url
         );
-        debugLog.visionosAudioCount = formats.length;
 
         if (formats.length > 0) {
-          // Prefer itag 140 (audio/mp4 AAC 128kbps) for universal cross-platform support
-          const target = formats.find((f: any) => f.itag === 140) ||
+          const target =
+            formats.find((f: any) => f.itag === 140) ||
             formats.find((f: any) => f.mimeType?.includes('audio/mp4')) ||
             formats[0];
 
@@ -200,11 +193,10 @@ async function resolveYouTubeAudioStream(videoId: string): Promise<{ url: string
       }
     }
   } catch (err: any) {
-    debugLog.visionosError = err?.message;
     console.warn(`VisionOS player extraction error for ${videoId}:`, err?.message);
   }
 
-  // Strategy 2: TVHTML5 Client fallback
+  // Strategy 3: TVHTML5 Client fallback
   try {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
@@ -244,19 +236,16 @@ async function resolveYouTubeAudioStream(videoId: string): Promise<{ url: string
       body: JSON.stringify(payload),
     });
 
-    debugLog.tvStatus = res.status;
     if (res.status === 200) {
       const data = await res.json();
-      debugLog.tvPlayability = data.playabilityStatus?.status;
-      debugLog.tvReason = data.playabilityStatus?.reason;
       if (data.playabilityStatus?.status === 'OK') {
         const formats = (data.streamingData?.adaptiveFormats || []).filter(
           (f: any) => f.mimeType?.includes('audio') && f.url
         );
-        debugLog.tvAudioCount = formats.length;
 
         if (formats.length > 0) {
-          const target = formats.find((f: any) => f.itag === 140) ||
+          const target =
+            formats.find((f: any) => f.itag === 140) ||
             formats.find((f: any) => f.mimeType?.includes('audio/mp4')) ||
             formats[0];
 
@@ -273,11 +262,10 @@ async function resolveYouTubeAudioStream(videoId: string): Promise<{ url: string
       }
     }
   } catch (err: any) {
-    debugLog.tvError = err?.message;
     console.warn(`TVHTML5 player extraction error for ${videoId}:`, err?.message);
   }
 
-  // Strategy 3: CLI yt-dlp fallback (for local development or environments with yt-dlp)
+  // Strategy 4: CLI yt-dlp fallback (for local development or environments with yt-dlp)
   try {
     const cliUrl = await resolveYouTubeViaCli(videoId);
     if (cliUrl) {
@@ -290,11 +278,10 @@ async function resolveYouTubeAudioStream(videoId: string): Promise<{ url: string
       return { url: cliUrl, mimeType: mime };
     }
   } catch (cliErr: any) {
-    debugLog.cliError = cliErr?.message;
     console.warn(`CLI yt-dlp fallback unavailable for ${videoId}:`, cliErr?.message);
   }
 
-  throw new Error(`Unable to resolve authentic YouTube audio stream for ${videoId}: ${JSON.stringify(debugLog)}`);
+  throw new Error(`Unable to resolve authentic YouTube audio stream for ${videoId}`);
 }
 
 export async function GET(req: NextRequest) {
@@ -309,11 +296,26 @@ export async function GET(req: NextRequest) {
   try {
     const { url: directUrl, mimeType } = await resolveYouTubeAudioStream(videoId);
 
-    // Stream through server proxy over HTTP/1.1 with Range support for seamless seeking and background playback
+    // Direct 307 Temporary Redirect:
+    // Enables browser (Chrome/Android) to stream audio chunks directly from Google CDN over resident IP.
+    // Completely eliminates datacenter IP blocking, saves serverless execution limits,
+    // and delivers zero-latency native HTML5 background audio playback on minimize/lock screen!
+    const shouldProxy = searchParams.get('proxy') === 'true';
+    if (!shouldProxy) {
+      return NextResponse.redirect(directUrl, {
+        status: 307,
+        headers: {
+          'Access-Control-Allow-Origin': '*',
+          'Cache-Control': 'public, max-age=14400',
+        },
+      });
+    }
+
+    // Proxy mode fallback
     const clientRange = req.headers.get('range');
     const upstreamHeaders: Record<string, string> = {
       'User-Agent':
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     };
 
     if (clientRange) {
@@ -327,10 +329,7 @@ export async function GET(req: NextRequest) {
 
     if (upstreamRes.status !== 200 && upstreamRes.status !== 206) {
       urlCache.delete(videoId);
-      return NextResponse.json(
-        { error: 'Upstream audio stream not accessible' },
-        { status: upstreamRes.status }
-      );
+      return NextResponse.redirect(directUrl, { status: 307 });
     }
 
     const responseHeaders = new Headers();
@@ -346,7 +345,6 @@ export async function GET(req: NextRequest) {
     }
     responseHeaders.set('Cache-Control', 'public, max-age=14400');
 
-    // Convert Node Readable to Web ReadableStream for standard Response streaming
     const webStream = new ReadableStream({
       start(controller) {
         upstreamRes.stream.on('data', (chunk) => {
@@ -387,32 +385,13 @@ export async function HEAD(req: NextRequest) {
   }
 
   try {
-    const { url: directUrl, mimeType } = await resolveYouTubeAudioStream(videoId);
-
-    const upstreamRes = await requestHttp1(directUrl, {
-      method: 'GET',
+    const { url: directUrl } = await resolveYouTubeAudioStream(videoId);
+    return NextResponse.redirect(directUrl, {
+      status: 307,
       headers: {
-        Range: 'bytes=0-1',
-        'User-Agent':
-          'Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15',
+        'Access-Control-Allow-Origin': '*',
+        'Accept-Ranges': 'bytes',
       },
-    });
-
-    const responseHeaders = new Headers();
-    responseHeaders.set('Content-Type', upstreamRes.headers['content-type'] || mimeType);
-    responseHeaders.set('Accept-Ranges', 'bytes');
-    responseHeaders.set('Access-Control-Allow-Origin', '*');
-    if (upstreamRes.headers['content-range']) {
-      const cr = upstreamRes.headers['content-range'];
-      const total = cr.split('/')[1];
-      if (total && total !== '*') {
-        responseHeaders.set('Content-Length', total);
-      }
-    }
-
-    return new Response(null, {
-      status: 200,
-      headers: responseHeaders,
     });
   } catch {
     return new Response(null, { status: 500 });
