@@ -71,54 +71,12 @@ export class MusicProviderService {
     category: 'malayalam' | 'english' | 'viral' | 'all' = 'all',
     limit: number = 12
   ): Promise<Track[]> {
-    if (category === 'english') {
-      try {
-        const [saavnSettled, ytSettled] = await Promise.allSettled([
-          getSaavnTrending('english', limit),
-          searchYouTube('trending english songs billboard hot official video', limit),
-        ]);
-        const saavnTracks = saavnSettled.status === 'fulfilled' ? saavnSettled.value : [];
-        const ytTracks = ytSettled.status === 'fulfilled' ? ytSettled.value : [];
-
-        const trackMap = new Map<string, Track>();
-        // Prioritize authentic YouTube Billboard top hits for original international audio
-        const maxLen = Math.max(ytTracks.length, saavnTracks.length);
-        for (let i = 0; i < maxLen; i++) {
-          if (ytTracks[i]) {
-            const key = `${ytTracks[i].title.toLowerCase()} - ${ytTracks[i].artist.toLowerCase()}`;
-            if (!trackMap.has(key)) trackMap.set(key, ytTracks[i]);
-          }
-          if (saavnTracks[i]) {
-            const key = `${saavnTracks[i].title.toLowerCase()} - ${saavnTracks[i].artist.toLowerCase()}`;
-            if (!trackMap.has(key)) trackMap.set(key, saavnTracks[i]);
-          }
-        }
-        const blended = Array.from(trackMap.values()).slice(0, limit);
-        if (blended.length > 0) return blended;
-      } catch (err) {
-        console.warn('Error fetching English trending category:', err);
-      }
-    }
-
     try {
       // Primary: High-fidelity studio master charts (clean cards, 320kbps MP4)
       const saavnTracks = await getSaavnTrending(category, limit);
       if (saavnTracks.length > 0) return saavnTracks.slice(0, limit);
     } catch (err) {
       console.warn('Error fetching Saavn trending category:', err);
-    }
-
-    try {
-      // Secondary fallback: YouTube official search
-      if (category === 'malayalam') {
-        const yt = await searchYouTube('latest trending malayalam songs official video', limit);
-        if (yt.length > 0) return yt;
-      } else if (category === 'viral') {
-        const yt = await searchYouTube('trending viral songs anirudh south indian bollywood official video', limit);
-        if (yt.length > 0) return yt;
-      }
-    } catch (err) {
-      console.warn('Error fetching YouTube trending category:', err);
     }
 
     return this.getTrending(limit);
@@ -130,23 +88,21 @@ export class MusicProviderService {
   public static async getTailoredCandidates(currentTrack: Track, preferences?: UserPreferences): Promise<Track[]> {
     const isMalayalam = isMalayalamTrack(currentTrack);
 
-    // If playing a Malayalam song, focus 100% on YouTube Malayalam queries
+    // If playing a Malayalam song, focus 100% on native Malayalam Saavn master streams
     if (isMalayalam) {
       const cleanArtist = currentTrack.artist.replace(/[\(\[\{].*?[\)\]\}]/g, '').trim();
       const cleanTitle = currentTrack.title.replace(/[\(\[\{].*?[\)\]\}]/g, '').trim();
 
-      const ytQueries: Promise<Track[]>[] = [
+      const queries: Promise<Track[]>[] = [
         searchSaavnTracks(`${cleanArtist} Malayalam`, 10),
-        searchSaavnTracks('Trending Malayalam', 10),
-        searchYouTube(`${cleanArtist} malayalam songs official video`, 8),
-        searchYouTube('latest trending malayalam songs official video', 10),
+        getSaavnTrending('malayalam', 12),
       ];
 
       if (cleanTitle.length > 3) {
-        ytQueries.push(searchYouTube(`${cleanTitle} malayalam song`, 8));
+        queries.push(searchSaavnTracks(`${cleanTitle} Malayalam`, 8));
       }
 
-      const settled = await Promise.allSettled(ytQueries);
+      const settled = await Promise.allSettled(queries);
       const candidates: Track[] = [];
       settled.forEach(s => {
         if (s.status === 'fulfilled' && Array.isArray(s.value)) {
@@ -155,7 +111,7 @@ export class MusicProviderService {
       });
 
       // Filter to ensure candidate pool is strictly Malayalam
-      const malayalamCandidates = candidates.filter(t => isMalayalamTrack(t) || t.id.startsWith('yt-'));
+      const malayalamCandidates = candidates.filter(t => isMalayalamTrack(t));
       const seedMalayalam = SEED_TRACKS.filter(t => isMalayalamTrack(t) && t.id !== currentTrack.id);
 
       const trackMap = new Map<string, Track>();
@@ -170,21 +126,20 @@ export class MusicProviderService {
       return Array.from(trackMap.values());
     }
 
-    // For other genres (e.g. English Pop, Electronic, Rock), query YouTube + tailored seeds
+    // For other genres (e.g. English Pop, Electronic, Rock), query native Saavn masters + tailored seeds
     const profile = getSonicProfileForTrack(currentTrack.title, currentTrack.artist, currentTrack.genre);
     const queries: Promise<Track[]>[] = [
       searchSaavnTracks(`${currentTrack.artist}`, 10),
-      searchYouTube(`${currentTrack.artist} songs official video`, 8),
     ];
 
     if (profile.searchSeeds && profile.searchSeeds.length > 0) {
-      queries.push(searchYouTube(`${profile.searchSeeds[0]} songs official video`, 10));
+      queries.push(searchSaavnTracks(`${profile.searchSeeds[0]}`, 10));
       if (profile.searchSeeds[1]) {
-        queries.push(searchYouTube(`${profile.searchSeeds[1]} songs official video`, 8));
+        queries.push(searchSaavnTracks(`${profile.searchSeeds[1]}`, 8));
       }
     }
 
-    queries.push(searchYouTube('trending english songs billboard hot official video', 8));
+    queries.push(getSaavnTrending('english', 10));
 
     const settled = await Promise.allSettled(queries);
     const liveTracks: Track[] = [];
@@ -216,7 +171,7 @@ export class MusicProviderService {
   }
 
   /**
-   * Search across all integrated providers (Audius, Jamendo, Seed)
+   * Search across music catalog with JioSaavn 320kbps MP4 studio masters as the sole primary engine
    */
   public static async search(query: string, limit: number = 20): Promise<SearchResult> {
     const cleanQ = normalizeSearchQuery(query);
@@ -225,14 +180,13 @@ export class MusicProviderService {
       return { tracks: [], artists: [], albums: [], playlists: [] };
     }
 
-    // 1. Search authentic Saavn master catalog AND YouTube original official releases in parallel
-    const [saavnSettled, ytSettled] = await Promise.allSettled([
-      searchSaavnTracks(cleanQ, limit),
-      searchYouTube(cleanQ, limit),
-    ]);
-
-    const saavnResults: Track[] = saavnSettled.status === 'fulfilled' ? saavnSettled.value : [];
-    const youtubeResults: Track[] = ytSettled.status === 'fulfilled' ? ytSettled.value : [];
+    // 1. Search authentic Saavn master catalog (sole primary engine)
+    let saavnResults: Track[] = [];
+    try {
+      saavnResults = await searchSaavnTracks(cleanQ, limit);
+    } catch (err) {
+      console.warn('Saavn search error:', err);
+    }
 
     // 2. Search local seed tracks
     const matchedSeedTracks = SEED_TRACKS.filter(t => 
@@ -243,38 +197,31 @@ export class MusicProviderService {
       t.moods?.some(m => m.toLowerCase().includes(qLower))
     );
 
-    // 3. Search Audius live catalog
+    // 3. Search Audius live catalog (indie / creative commons)
     let audiusResults: Track[] = [];
     try {
-      audiusResults = await searchAudiusTracks(cleanQ, Math.min(limit, 8));
+      audiusResults = await searchAudiusTracks(cleanQ, Math.min(limit, 6));
     } catch (err) {
       console.warn('Audius search error:', err);
     }
 
-    const isIndian = isIndianOrRegionalQuery(cleanQ);
+    // 4. YouTube is strictly an emergency fallback ONLY if Saavn and Seeds return 0 tracks
+    let youtubeResults: Track[] = [];
+    if (saavnResults.length === 0 && matchedSeedTracks.length === 0) {
+      try {
+        youtubeResults = await searchYouTube(cleanQ, limit);
+      } catch (err) {
+        console.warn('YouTube fallback search error:', err);
+      }
+    }
 
-    // If query is for Indian/regional music (Malayalam, Tamil, Hindi, etc.), prioritize Saavn's Indian studio masters.
-    // If query is for English/International music (e.g. "alanwalker faded", "coldplay", "adele", "faded", etc.),
-    // prioritize YouTube's official original releases so the user gets the 100% genuine original copy!
-    const filteredSaavn = isIndian
-      ? saavnResults
-      : saavnResults.filter((t) => {
-          const tLower = t.title.toLowerCase();
-          const aLower = t.artist.toLowerCase();
-          // Filter out low quality covers, altered remixes, or tribute labels for international searches
-          if (/\b(remix|cover|karaoke|tribute|sped up|slowed|instrumental|inspired by|soundalike)\b/i.test(tLower)) return false;
-          if (/\b(tribute|karaoke|soundalike|cover pop|new records|ns recording|maxence)\b/i.test(aLower)) return false;
-          if (/\b(maxence|ns recording|new records|nmw rec)\b/i.test(t.licenseName || '') || /\b(maxence)\b/i.test(t.album || '')) return false;
-          return true;
-        });
-
-    // Authentic studio master streams (Saavn) provide 320kbps MP4 audio that plays natively in HTML5
-    // without background restrictions on Android/Chrome. YouTube official results provide secondary coverage.
+    // JioSaavn studio master streams provide 320kbps MP4 audio that plays natively in HTML5 <audio>
+    // with MediaSession, and NEVER pauses or stops when the tab or screen is minimized on Android!
     const prioritizedSources = [
-      ...filteredSaavn,
-      ...youtubeResults,
+      ...saavnResults,
       ...matchedSeedTracks,
       ...audiusResults,
+      ...youtubeResults,
     ];
 
     // Deduplicate tracks by normalized title + artist (stripping noise like "Official Video", "(Audio)", etc.)
@@ -342,32 +289,32 @@ export class MusicProviderService {
   }
 
   /**
-   * Returns tracks for a specific mood category powered by YouTube Music
+   * Returns tracks for a specific mood category powered by JioSaavn Studio Masters
    */
   public static async getTracksByMood(mood: string, limit: number = 20): Promise<Track[]> {
     const mLower = mood.toLowerCase().trim();
     
     const MOOD_QUERIES: Record<string, string> = {
-      chill: 'chill lofi beats relaxing songs official video',
+      chill: 'chill lofi beats relaxing songs',
       focus: 'deep focus study instrumental music',
       workout: 'workout motivation gym workout music songs',
       sleep: 'deep sleep relaxing ambient music',
-      'night-drive': 'night drive synthwave phonk songs official video',
-      romantic: 'romantic love songs acoustic official video',
-      energetic: 'party dance energetic songs official video',
-      acoustic: 'acoustic guitar singer songwriter songs official video',
-      electronic: 'electronic dance music edm official video',
-      instrumental: 'piano violin instrumental cinematic music',
+      'night-drive': 'night drive synthwave songs',
+      romantic: 'romantic love songs acoustic',
+      energetic: 'party dance energetic songs',
+      acoustic: 'acoustic guitar singer songwriter songs',
+      electronic: 'electronic dance music edm',
+      instrumental: 'piano violin instrumental music',
     };
 
     try {
-      const q = MOOD_QUERIES[mLower] || `${mood} music songs official video`;
-      const ytTracks = await searchYouTube(q, limit);
-      if (ytTracks.length > 0) {
-        return ytTracks;
+      const q = MOOD_QUERIES[mLower] || `${mood} songs`;
+      const saavnTracks = await searchSaavnTracks(q, limit);
+      if (saavnTracks.length > 0) {
+        return saavnTracks;
       }
     } catch (err) {
-      console.warn('Error fetching YouTube mood tracks:', err);
+      console.warn('Error fetching Saavn mood tracks:', err);
     }
 
     // Check seed tracks matching mood

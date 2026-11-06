@@ -55,6 +55,7 @@ const FAKE_ARTISTS = [
   'impersonator',
   'backing tracks',
   'cover band',
+  'piano man',
 ];
 
 export function isAuthenticSaavnSong(s: any, query?: string): boolean {
@@ -81,7 +82,7 @@ export function isAuthenticSaavnSong(s: any, query?: string): boolean {
     if (FAKE_NOISE_REGEX.test(combined)) return false;
 
     // Filter soundalike remake labels pretending to be original artists
-    if (/\b(maxence|ns recording|nmw rec|tribute|soundalike|cover pop)\b/i.test(label)) {
+    if (/\b(maxence|ns recording|nmw rec|tribute|soundalike|cover pop|threesound)\b/i.test(label)) {
       return false;
     }
 
@@ -153,9 +154,57 @@ const SAAVN_FETCH_HEADERS = {
   'CF-IPCountry': 'IN',
 };
 
+export function scoreSaavnCandidate(item: any, qStr: string): number {
+  const q = qStr.toLowerCase().trim();
+  const qWords = q.split(/[\s,]+/).filter((w) => w.length > 1);
+  const title = (item.song || item.title || '').toLowerCase().trim();
+  const cleanTitle = title.replace(/\s*[\(\[\{].*?[\)\]\}]\s*/g, '').trim();
+  const artist = (item.primary_artists || item.singers || item.more_info?.primary_artists || '').toLowerCase().trim();
+  const plays = parseInt(item.play_count || 0, 10);
+
+  let score = 0;
+
+  // Exact or prefix title match
+  if (cleanTitle === q) {
+    score += 2500;
+  } else if (cleanTitle.startsWith(q) || q.startsWith(cleanTitle)) {
+    score += 1200;
+  } else if (cleanTitle.includes(q)) {
+    score += 600;
+  }
+
+  // Word matches in title & artist
+  for (const w of qWords) {
+    if (cleanTitle.includes(w)) score += 350;
+    if (artist.includes(w)) score += 450;
+  }
+
+  // Clean title boost (penalize remixes/covers if not requested by user)
+  const isClean = !title.includes('(') && !title.includes('[');
+  if (isClean) {
+    score += 300;
+  } else {
+    if (/\b(remix|acoustic|live|slowed|restrung|version|instrumental)\b/i.test(title)) {
+      score -= 500;
+    }
+  }
+
+  // Authentic megahit / play count tiers (original studio masters have millions of plays)
+  if (plays >= 50000000) score += 5000;
+  else if (plays >= 10000000) score += 3000;
+  else if (plays >= 1000000) score += 1500;
+  else if (plays >= 100000) score += 500;
+  else if (plays < 50000) score -= 600; // Impostors/covers typically < 50k
+
+  score += Math.log10(Math.max(plays, 1)) * 50;
+
+  return score;
+}
+
 export async function searchSaavnTracks(query: string, limit: number = 20): Promise<Track[]> {
   try {
-    const searchUrl = `https://www.jiosaavn.com/api.php?__call=search.getResults&_format=json&_marker=0&cc=in&p=1&n=${limit * 2}&q=${encodeURIComponent(query)}`;
+    const fetchLimit = Math.max(limit * 2, 40);
+    const searchUrl = `https://www.jiosaavn.com/api.php?__call=search.getResults&_format=json&_marker=0&cc=in&p=1&n=${fetchLimit}&q=${encodeURIComponent(query)}`;
     const res = await fetch(searchUrl, {
       headers: SAAVN_FETCH_HEADERS,
       cache: 'no-store',
@@ -166,51 +215,32 @@ export async function searchSaavnTracks(query: string, limit: number = 20): Prom
     const data = await res.json();
     const rawResults: any[] = data?.results || [];
 
-    // Filter authentic tracks first
+    // Filter authentic tracks
     const authenticItems = rawResults.filter((item: any) => isAuthenticSaavnSong(item, query));
 
-    // If query mentions an artist name, prioritize candidates whose artist matches the query words
-    const qLower = query.toLowerCase().trim();
-    const artistMatches = authenticItems.filter((item: any) => {
-      const art = (item.primary_artists || item.singers || item.more_info?.primary_artists || '').toLowerCase();
-      const artWords = art.split(/[,\s]+/).filter((w: string) => w.length > 2);
-      return artWords.some((w: string) => qLower.includes(w));
-    });
-    const candidatePool = artistMatches.length > 0 ? artistMatches : authenticItems;
-
-    // Smart relevance sorting:
-    // 1) Matching artist name from search query
-    // 2) Exact title match
-    // 3) Clean title (no noise/parentheses)
-    // 4) Highest play count descending
-    const queryWords = qLower.split(/\s+/).filter((w) => w.length > 2);
-    candidatePool.sort((a: any, b: any) => {
-      const aArtist = (a.primary_artists || a.singers || a.more_info?.primary_artists || '').toLowerCase();
-      const bArtist = (b.primary_artists || b.singers || b.more_info?.primary_artists || '').toLowerCase();
-
-      // Check if artist matches words in search query
-      const aArtistScore = queryWords.reduce((acc, w) => acc + (aArtist.includes(w) ? 2 : 0), 0);
-      const bArtistScore = queryWords.reduce((acc, w) => acc + (bArtist.includes(w) ? 2 : 0), 0);
-      if (aArtistScore !== bArtistScore) {
-        return bArtistScore - aArtistScore;
-      }
-
-      const aTitle = a.song || a.title || '';
-      const bTitle = b.song || b.title || '';
-      const aClean = !aTitle.includes('(') && !aTitle.includes('[');
-      const bClean = !bTitle.includes('(') && !bTitle.includes('[');
-      if (aClean && !bClean) return -1;
-      if (!aClean && bClean) return 1;
-
-      const aPlays = parseInt(a.play_count || 0, 10);
-      const bPlays = parseInt(b.play_count || 0, 10);
-      return bPlays - aPlays;
-    });
+    // Smart relevance and play-count scoring:
+    // Highest priority to genuine original masters with millions of plays matching title and artist
+    authenticItems.sort((a: any, b: any) => scoreSaavnCandidate(b, query) - scoreSaavnCandidate(a, query));
 
     const tracks: Track[] = [];
-    for (const item of candidatePool) {
+    const seenTracks = new Set<string>();
+
+    for (const item of authenticItems) {
       const track = mapSaavnSongToTrack(item);
-      if (track && !tracks.some((t) => t.id === track.id)) {
+      if (!track) continue;
+
+      const normTitle = track.title
+        .toLowerCase()
+        .replace(/\s*[\(\[\{].*?[\)\]\}]\s*/g, '')
+        .replace(/[^a-z0-9]/g, '');
+      const normArtist = track.artist
+        .toLowerCase()
+        .replace(/\s*[\(\[\{].*?[\)\]\}]\s*/g, '')
+        .replace(/[^a-z0-9]/g, '');
+      const dedupKey = `${normTitle}-${normArtist}`;
+
+      if (!seenTracks.has(dedupKey) && !tracks.some((t) => t.id === track.id)) {
+        seenTracks.add(dedupKey);
         tracks.push(track);
       }
       if (tracks.length >= limit) break;
