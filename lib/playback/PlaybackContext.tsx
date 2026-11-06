@@ -886,13 +886,33 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
               return;
             }
           } catch (err) {
-            console.warn('Native HTML5 /api/stream playback error:', err);
+            console.warn('Native HTML5 /api/stream playback error, falling back to YouTube player:', err);
+            isNativeAudioStreamRef.current = false;
+            if (audioRef.current) {
+              audioRef.current.pause();
+              audioRef.current.src = SILENT_AUDIO_URI;
+              audioRef.current.loop = true;
+              audioRef.current.play().catch(() => {});
+            }
+            if (isYtReadyRef.current && ytPlayerRef.current) {
+              try {
+                ytPlayerRef.current.loadVideoById(videoId);
+                ytPlayerRef.current.playVideo();
+                if (playRequestIdRef.current !== currentRequestId) return;
+                setIsPlaying(true);
+                setIsLoading(false);
+                return;
+              } catch (ytErr) {
+                console.warn('YouTube fallback failed:', ytErr);
+              }
+            } else {
+              pendingYtVideoIdRef.current = videoId;
+              if (playRequestIdRef.current !== currentRequestId) return;
+              setIsPlaying(true);
+              setIsLoading(false);
+              return;
+            }
           }
-
-          if (playRequestIdRef.current !== currentRequestId) return;
-          setIsLoading(false);
-          setIsPlaying(false);
-          setError('Audio stream unavailable. Tap next to skip.');
         })();
       } else {
         isUserPausedRef.current = false;
