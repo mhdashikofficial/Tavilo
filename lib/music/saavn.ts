@@ -81,7 +81,7 @@ export function isAuthenticSaavnSong(s: any, query?: string): boolean {
     if (FAKE_NOISE_REGEX.test(combined)) return false;
 
     // Filter soundalike remake labels pretending to be original artists
-    if (/\b(kreatell|maxence|ns recording|nmw rec|tribute|soundalike|cover pop)\b/i.test(label)) {
+    if (/\b(maxence|ns recording|nmw rec|tribute|soundalike|cover pop)\b/i.test(label)) {
       return false;
     }
 

@@ -263,14 +263,19 @@ export class MusicProviderService {
           const aLower = t.artist.toLowerCase();
           // Filter out low quality covers, altered remixes, or tribute labels for international searches
           if (/\b(remix|cover|karaoke|tribute|sped up|slowed|instrumental|inspired by|soundalike)\b/i.test(tLower)) return false;
-          if (/\b(tribute|karaoke|soundalike|cover pop|kreatell|new records|ns recording|maxence)\b/i.test(aLower)) return false;
-          if (/\b(kreatell|maxence|ns recording|new records|nmw rec)\b/i.test(t.licenseName || '') || /\b(kreatell|maxence)\b/i.test(t.album || '')) return false;
+          if (/\b(tribute|karaoke|soundalike|cover pop|new records|ns recording|maxence)\b/i.test(aLower)) return false;
+          if (/\b(maxence|ns recording|new records|nmw rec)\b/i.test(t.licenseName || '') || /\b(maxence)\b/i.test(t.album || '')) return false;
           return true;
         });
 
-    const prioritizedSources = isIndian
-      ? [...saavnResults, ...youtubeResults, ...matchedSeedTracks, ...audiusResults]
-      : [...youtubeResults, ...filteredSaavn, ...matchedSeedTracks, ...audiusResults];
+    // Authentic studio master streams (Saavn) provide 320kbps MP4 audio that plays natively in HTML5
+    // without background restrictions on Android/Chrome. YouTube official results provide secondary coverage.
+    const prioritizedSources = [
+      ...filteredSaavn,
+      ...youtubeResults,
+      ...matchedSeedTracks,
+      ...audiusResults,
+    ];
 
     // Deduplicate tracks by normalized title + artist (stripping noise like "Official Video", "(Audio)", etc.)
     const trackMap = new Map<string, Track>();

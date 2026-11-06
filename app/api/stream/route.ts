@@ -296,13 +296,14 @@ export async function GET(req: NextRequest) {
   try {
     const { url: directUrl, mimeType } = await resolveYouTubeAudioStream(videoId);
 
-    // Direct 307 Temporary Redirect:
-    // Enables browser (Chrome/Android) to stream audio chunks directly from Google CDN over resident IP.
-    // Completely eliminates datacenter IP blocking, saves serverless execution limits,
-    // and delivers zero-latency native HTML5 background audio playback on minimize/lock screen!
+    // High-availability dynamic audio streaming redirect:
+    // Redirects client browser to latest_version companion, which dynamically signs
+    // the Google Video stream with the client's incoming residential IP (ipbypass=yes & mip=<client_ip>).
+    // This completely eliminates Google Video 403 Forbidden errors on mobile devices!
     const shouldProxy = searchParams.get('proxy') === 'true';
     if (!shouldProxy) {
-      return NextResponse.redirect(directUrl, {
+      const dynamicStreamUrl = `https://yt.chocolatemoo53.com/latest_version?id=${encodeURIComponent(videoId)}&itag=140`;
+      return NextResponse.redirect(dynamicStreamUrl, {
         status: 307,
         headers: {
           'Access-Control-Allow-Origin': '*',
