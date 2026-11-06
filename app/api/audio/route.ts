@@ -31,18 +31,72 @@ function cleanSearchQuery(raw: string): string {
     .trim();
 }
 
-function isConfidentMatch(query: string, resultTitle: string, resultArtist: string): boolean {
-  const normQuery = query.toLowerCase().replace(/[^a-z0-9\s]/g, ' ');
-  const normTitle = (resultTitle || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ');
-  const normArtist = (resultArtist || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ');
+const FAKE_NOISE_REGEX = /\b(tribute|karaoke|originally performed by|made famous by|in the style of|instrumental version|cover version|backing track|unofficial remix|sound-?a-?like)\b/i;
+const FAKE_ARTISTS = [
+  'ultimate tribute stars',
+  'karaoke hits',
+  'karaoke universe',
+  'sing2music',
+  'ameritz',
+  'wonderland',
+  'the hit crew',
+  'hit crew',
+  'prosound karaoke',
+  'cover pop',
+  'midifine',
+  'sound-a-like',
+  'soundalike',
+  'tribute band',
+];
 
-  const stopWords = new Set(['the', 'and', 'official', 'video', 'song', 'audio', 'music', 'from', 'with', 'feat', 'ft']);
-  const words = normQuery.split(/\s+/).filter(w => w.length >= 3 && !stopWords.has(w));
-  
-  if (words.length === 0) return true;
+function isAuthenticMatch(
+  requestedTitle: string,
+  requestedArtist: string,
+  candidateTitle: string,
+  candidateArtist: string,
+  candidateAlbum?: string
+): boolean {
+  const titleLower = (candidateTitle || '').toLowerCase();
+  const artistLower = (candidateArtist || '').toLowerCase();
+  const albumLower = (candidateAlbum || '').toLowerCase();
+  const reqTitleLower = (requestedTitle || '').toLowerCase();
+  const reqArtistLower = (requestedArtist || '').toLowerCase();
 
-  // At least one significant word from user query must exist in song title or artist
-  return words.some(w => normTitle.includes(w) || normArtist.includes(w));
+  // If user didn't ask for a remix/karaoke/tribute, reject candidates containing those
+  const userWantsSpecial =
+    reqTitleLower.includes('remix') ||
+    reqTitleLower.includes('karaoke') ||
+    reqTitleLower.includes('tribute') ||
+    reqTitleLower.includes('cover') ||
+    reqTitleLower.includes('instrumental');
+
+  if (!userWantsSpecial) {
+    for (const fa of FAKE_ARTISTS) {
+      if (artistLower.includes(fa)) return false;
+    }
+    const combined = `${titleLower} ${artistLower} ${albumLower}`;
+    if (FAKE_NOISE_REGEX.test(combined)) return false;
+  }
+
+  // Ensure significant title words match
+  const titleWords = reqTitleLower
+    .split(/[^a-z0-9]+/)
+    .filter(w => w.length >= 3 && !['the', 'and', 'song', 'audio', 'video', 'official', 'lyrics'].includes(w));
+  if (titleWords.length > 0 && !titleWords.some(w => titleLower.includes(w))) {
+    return false;
+  }
+
+  // If requested artist is specified, ensure candidate artist actually matches!
+  if (reqArtistLower && reqArtistLower !== 'youtube artist' && reqArtistLower.length > 2) {
+    const artistWords = reqArtistLower
+      .split(/[^a-z0-9]+/)
+      .filter(w => w.length >= 3 && !['the', 'and', 'music', 'official', 'vevo', 'topic', 'records'].includes(w));
+    if (artistWords.length > 0 && !artistWords.some(w => artistLower.includes(w))) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 export async function GET(request: NextRequest) {
@@ -57,6 +111,7 @@ export async function GET(request: NextRequest) {
 
   const cleanQuery = cleanSearchQuery(query);
   const cleanTitle = cleanSearchQuery(title);
+  const cleanArtist = cleanSearchQuery(artist);
 
   try {
     const searchQueries = [cleanQuery];
@@ -83,9 +138,15 @@ export async function GET(request: NextRequest) {
       const songs = searchData?.songs?.data;
 
       if (Array.isArray(songs) && songs.length > 0) {
-        // Validate match confidence against query to prevent playing completely wrong tracks
+        // Strictly validate authentic studio master match (prevent playing fake tribute / karaoke / unofficial remixes)
         const candidate = songs.find((s: any) =>
-          isConfidentMatch(q, s.title, s.more_info?.primary_artists)
+          isAuthenticMatch(
+            cleanTitle || title,
+            cleanArtist || artist,
+            s.title,
+            s.more_info?.primary_artists || s.singers || '',
+            s.album
+          )
         );
         if (candidate) {
           matchingSong = candidate;
@@ -96,7 +157,7 @@ export async function GET(request: NextRequest) {
 
     if (!matchingSong) {
       return NextResponse.json(
-        { success: false, error: 'No confident match found in catalog' },
+        { success: false, error: 'No authentic studio master found in Saavn catalog' },
         { status: 404 }
       );
     }

@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo, Suspense } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import {
@@ -14,6 +15,8 @@ import {
   User,
   ListMusic,
   MoreVertical,
+  Search,
+  ExternalLink,
 } from 'lucide-react';
 import { TopBar } from '@/components/navigation/TopBar';
 import { TrackRow } from '@/components/music/TrackRow';
@@ -22,7 +25,11 @@ import { usePlayback } from '@/lib/playback/PlaybackContext';
 import { cn } from '@/lib/utils';
 import { Playlist } from '@/types/music';
 
-export default function LibraryPage() {
+function LibraryContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const tabFromQuery = searchParams.get('tab');
+
   const { playlists, likedTracks, preferences, createPlaylist, deletePlaylist } = useLibrary();
   const { playTrack } = usePlayback();
 
@@ -30,6 +37,13 @@ export default function LibraryPage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newTitle, setNewTitle] = useState('');
   const [newDesc, setNewDesc] = useState('');
+  const [likedFilter, setLikedFilter] = useState('');
+
+  useEffect(() => {
+    if (tabFromQuery === 'liked' || tabFromQuery === 'playlists' || tabFromQuery === 'history') {
+      setActiveTab(tabFromQuery);
+    }
+  }, [tabFromQuery]);
 
   const handleCreatePlaylist = (e: React.FormEvent) => {
     e.preventDefault();
@@ -49,6 +63,17 @@ export default function LibraryPage() {
     playTrack(tracksToPlay[0], tracksToPlay.slice(1));
   };
 
+  const filteredLikedTracks = useMemo(() => {
+    if (!likedFilter.trim()) return likedTracks;
+    const q = likedFilter.toLowerCase().trim();
+    return likedTracks.filter(
+      (t) =>
+        t.title.toLowerCase().includes(q) ||
+        t.artist.toLowerCase().includes(q) ||
+        t.album?.toLowerCase().includes(q)
+    );
+  }, [likedTracks, likedFilter]);
+
   return (
     <div className="min-h-full">
       <TopBar title="Your Library" />
@@ -65,7 +90,14 @@ export default function LibraryPage() {
             ].map((tab) => (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id as any)}
+                onClick={() => {
+                  setActiveTab(tab.id as any);
+                  if (tab.id === 'liked') {
+                    router.replace('/library?tab=liked');
+                  } else {
+                    router.replace('/library');
+                  }
+                }}
                 className={cn(
                   'px-4 py-2 rounded-full text-xs font-semibold whitespace-nowrap transition-all',
                   activeTab === tab.id
@@ -90,7 +122,7 @@ export default function LibraryPage() {
         {/* Liked Songs Hero Card (Show in 'all' or 'liked') */}
         {(activeTab === 'all' || activeTab === 'liked') && (
           <div
-            onClick={() => setActiveTab('liked')}
+            onClick={() => router.push('/playlist/liked')}
             className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-emerald-900/60 via-tavilo-card to-[#121622] border border-tavilo-green/30 p-6 sm:p-8 shadow-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-6 cursor-pointer group hover:border-tavilo-green/50 transition-colors"
           >
             <div className="flex items-center space-x-5">
@@ -105,29 +137,38 @@ export default function LibraryPage() {
                   Liked Songs
                 </h2>
                 <p className="text-xs sm:text-sm text-tavilo-text-secondary mt-1">
-                  {likedTracks.length} tracks you love • Click to browse all
+                  {likedTracks.length} tracks you love • Click to browse dedicated view
                 </p>
               </div>
             </div>
 
-            {likedTracks.length > 0 && (
-              <div className="flex items-center space-x-3" onClick={(e) => e.stopPropagation()}>
-                <button
-                  onClick={() => handlePlayLiked(false)}
-                  className="w-12 h-12 rounded-full bg-tavilo-green text-black flex items-center justify-center hover:scale-105 active:scale-95 transition-transform shadow-lg shadow-tavilo-green/30"
-                  aria-label="Play all liked songs"
-                >
-                  <Play className="w-6 h-6 fill-current ml-0.5" />
-                </button>
-                <button
-                  onClick={() => handlePlayLiked(true)}
-                  className="p-3 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors"
-                  aria-label="Shuffle liked songs"
-                >
-                  <Shuffle className="w-5 h-5" />
-                </button>
-              </div>
-            )}
+            <div className="flex items-center space-x-3" onClick={(e) => e.stopPropagation()}>
+              <Link
+                href="/playlist/liked"
+                className="hidden sm:flex items-center space-x-1.5 px-4 py-2 rounded-full bg-white/10 hover:bg-white/20 text-xs font-semibold text-white transition-colors"
+              >
+                <span>View Full Page</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </Link>
+              {likedTracks.length > 0 && (
+                <>
+                  <button
+                    onClick={() => handlePlayLiked(false)}
+                    className="w-12 h-12 rounded-full bg-tavilo-green text-black flex items-center justify-center hover:scale-105 active:scale-95 transition-transform shadow-lg shadow-tavilo-green/30"
+                    aria-label="Play all liked songs"
+                  >
+                    <Play className="w-6 h-6 fill-current ml-0.5" />
+                  </button>
+                  <button
+                    onClick={() => handlePlayLiked(true)}
+                    className="p-3 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors"
+                    aria-label="Shuffle liked songs"
+                  >
+                    <Shuffle className="w-5 h-5" />
+                  </button>
+                </>
+              )}
+            </div>
           </div>
         )}
 
@@ -139,15 +180,16 @@ export default function LibraryPage() {
                 <Heart className="w-4 h-4 text-tavilo-green fill-tavilo-green" />
                 <span>Your Favorite Songs</span>
               </h2>
-              <button
-                onClick={() => setActiveTab('liked')}
-                className="text-xs font-semibold text-tavilo-green hover:underline"
+              <Link
+                href="/playlist/liked"
+                className="text-xs font-semibold text-tavilo-green hover:underline flex items-center space-x-1"
               >
-                View all ({likedTracks.length}) →
-              </button>
+                <span>View all ({likedTracks.length})</span>
+                <span>→</span>
+              </Link>
             </div>
             <div className="bg-tavilo-card/50 border border-tavilo-border rounded-2xl p-2 sm:p-4 space-y-1">
-              {likedTracks.slice(0, 6).map((track, idx) => (
+              {likedTracks.slice(0, 8).map((track, idx) => (
                 <TrackRow
                   key={track.id}
                   track={track}
@@ -161,23 +203,50 @@ export default function LibraryPage() {
 
         {/* Liked Songs Full Track List (if in 'liked' tab) */}
         {activeTab === 'liked' && (
-          <div className="bg-tavilo-card/50 border border-tavilo-border rounded-2xl p-2 sm:p-4 space-y-1">
-            {likedTracks.length === 0 ? (
-              <div className="p-8 text-center text-tavilo-text-muted">
-                <Heart className="w-10 h-10 mx-auto mb-2 opacity-30" />
-                <p className="text-sm font-semibold text-white">No liked tracks yet</p>
-                <p className="text-xs mt-1">Tap the heart on any track to save it here.</p>
+          <div className="space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center space-x-3">
+                <span className="text-sm font-bold text-white">All Liked Tracks</span>
+                <span className="text-xs text-tavilo-text-muted">({filteredLikedTracks.length} songs)</span>
               </div>
-            ) : (
-              likedTracks.map((track, idx) => (
-                <TrackRow
-                  key={track.id}
-                  track={track}
-                  index={idx}
-                  playlistContext={likedTracks}
-                />
-              ))
-            )}
+              {likedTracks.length > 3 && (
+                <div className="relative w-full sm:w-64">
+                  <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-tavilo-text-muted" />
+                  <input
+                    type="text"
+                    value={likedFilter}
+                    onChange={(e) => setLikedFilter(e.target.value)}
+                    placeholder="Search in liked songs..."
+                    className="w-full pl-9 pr-3 py-1.5 rounded-xl bg-tavilo-surface border border-tavilo-border text-xs text-white placeholder-tavilo-text-muted focus:outline-none focus:border-tavilo-green/60"
+                  />
+                </div>
+              )}
+            </div>
+
+            <div className="bg-tavilo-card/50 border border-tavilo-border rounded-2xl p-2 sm:p-4 space-y-1">
+              {filteredLikedTracks.length === 0 ? (
+                <div className="p-8 text-center text-tavilo-text-muted">
+                  <Heart className="w-10 h-10 mx-auto mb-2 opacity-30 text-tavilo-green" />
+                  <p className="text-sm font-semibold text-white">
+                    {likedFilter ? 'No matching songs found' : 'No liked tracks yet'}
+                  </p>
+                  <p className="text-xs mt-1">
+                    {likedFilter
+                      ? 'Try another search term'
+                      : 'Tap the heart on any track to save it here.'}
+                  </p>
+                </div>
+              ) : (
+                filteredLikedTracks.map((track, idx) => (
+                  <TrackRow
+                    key={track.id}
+                    track={track}
+                    index={idx}
+                    playlistContext={filteredLikedTracks}
+                  />
+                ))
+              )}
+            </div>
           </div>
         )}
 
@@ -311,5 +380,22 @@ export default function LibraryPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function LibraryPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-full">
+          <TopBar title="Your Library" />
+          <div className="max-w-7xl mx-auto px-4 sm:px-8 py-16 text-center text-tavilo-text-muted">
+            Loading library...
+          </div>
+        </div>
+      }
+    >
+      <LibraryContent />
+    </Suspense>
   );
 }

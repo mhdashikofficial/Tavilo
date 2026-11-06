@@ -109,10 +109,10 @@ export function Sidebar({ onOpenTuneMix }: SidebarProps) {
       <div className="flex-1 overflow-y-auto space-y-1 pr-1 text-xs">
         {/* Liked Songs Entry */}
         <Link
-          href="/library?tab=liked"
+          href="/playlist/liked"
           className={cn(
             'flex items-center space-x-3 px-3 py-2 rounded-xl transition-colors',
-            pathname === '/library'
+            pathname === '/playlist/liked'
               ? 'text-tavilo-green font-medium bg-tavilo-surface/40'
               : 'text-tavilo-text-secondary hover:text-white hover:bg-tavilo-surface/40'
           )}

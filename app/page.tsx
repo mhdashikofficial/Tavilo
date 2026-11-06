@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import {
   Sparkles,
@@ -31,6 +32,7 @@ import { SEED_TRACKS, MOOD_CATEGORIES, CURATED_PLAYLISTS } from '@/lib/music/see
 import { RecommendationEngine } from '@/lib/recommendations/engine';
 
 export default function HomePage() {
+  const router = useRouter();
   const { playTrack } = usePlayback();
   const { preferences, playlists, likedTracks } = useLibrary();
 
@@ -160,7 +162,9 @@ export default function HomePage() {
         ? likedTracks[0].artwork
         : 'https://i.ytimg.com/vi/60ItHLz5WEA/hqdefault.jpg',
       isLiked: true,
-      action: () => {
+      action: () => router.push('/playlist/liked'),
+      playAction: (e: React.MouseEvent) => {
+        e.stopPropagation();
         if (likedTracks.length > 0) {
           playTrack(likedTracks[0], likedTracks.slice(1));
         }
@@ -172,7 +176,9 @@ export default function HomePage() {
       count: `${pl.trackCount} tracks`,
       artwork: pl.artwork,
       isLiked: false,
-      action: () => {
+      action: () => router.push(`/playlist/${pl.id}`),
+      playAction: (e: React.MouseEvent) => {
+        e.stopPropagation();
         if (pl.tracks.length > 0) {
           playTrack(pl.tracks[0], pl.tracks.slice(1));
         }
@@ -227,7 +233,7 @@ export default function HomePage() {
               <div
                 key={item.id}
                 onClick={item.action}
-                className="group flex items-center bg-white/5 hover:bg-white/10 rounded-xl overflow-hidden border border-white/5 hover:border-tavilo-green/30 transition-all cursor-pointer shadow-md"
+                className="group relative flex items-center bg-white/5 hover:bg-white/10 rounded-xl overflow-hidden border border-white/5 hover:border-tavilo-green/30 transition-all cursor-pointer shadow-md pr-2"
               >
                 <div className="relative w-14 h-14 sm:w-16 sm:h-16 flex-shrink-0 bg-black/40">
                   {item.isLiked ? (
@@ -253,6 +259,14 @@ export default function HomePage() {
                     {item.count}
                   </p>
                 </div>
+                {/* Instant Play Button on Hover */}
+                <button
+                  onClick={item.playAction}
+                  aria-label={`Play ${item.title}`}
+                  className="w-8 h-8 rounded-full bg-tavilo-green text-black flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all hover:scale-105 active:scale-95 shadow-md flex-shrink-0 mr-1"
+                >
+                  <Play className="w-4 h-4 fill-current ml-0.5" />
+                </button>
               </div>
             ))}
           </div>

@@ -32,6 +32,50 @@ export function decryptSaavnMediaUrl(encryptedMediaUrl: string): string {
   }
 }
 
+const FAKE_NOISE_REGEX = /\b(tribute|karaoke|originally performed by|made famous by|in the style of|instrumental version|cover version|backing track|unofficial remix|sound-?a-?like)\b/i;
+const FAKE_ARTISTS = [
+  'ultimate tribute stars',
+  'karaoke hits',
+  'karaoke universe',
+  'sing2music',
+  'ameritz',
+  'wonderland',
+  'the hit crew',
+  'hit crew',
+  'prosound karaoke',
+  'cover pop',
+  'midifine',
+  'sound-a-like',
+  'soundalike',
+  'tribute band',
+];
+
+export function isAuthenticSaavnSong(s: any, query?: string): boolean {
+  if (!s) return false;
+  const qLower = (query || '').toLowerCase();
+  const title = (s.song || s.title || '').toLowerCase();
+  const artist = (s.primary_artists || s.more_info?.primary_artists || s.singers || '').toLowerCase();
+  const album = (s.album || s.more_info?.album || '').toLowerCase();
+
+  // If user explicitly searched for tribute, karaoke, or remix, allow it
+  const userWantsSpecial =
+    qLower.includes('karaoke') ||
+    qLower.includes('tribute') ||
+    qLower.includes('cover') ||
+    qLower.includes('remix') ||
+    qLower.includes('instrumental');
+
+  if (!userWantsSpecial) {
+    for (const fa of FAKE_ARTISTS) {
+      if (artist.includes(fa)) return false;
+    }
+    const combined = `${title} ${artist} ${album}`;
+    if (FAKE_NOISE_REGEX.test(combined)) return false;
+  }
+
+  return true;
+}
+
 export function mapSaavnSongToTrack(s: any): Track | null {
   if (!s) return null;
   const streamUrl = decryptSaavnMediaUrl(s.encrypted_media_url);
@@ -87,7 +131,7 @@ export function mapSaavnSongToTrack(s: any): Track | null {
 
 export async function searchSaavnTracks(query: string, limit: number = 20): Promise<Track[]> {
   try {
-    const searchUrl = `https://www.jiosaavn.com/api.php?__call=search.getResults&_format=json&_marker=0&cc=in&p=1&n=${limit}&q=${encodeURIComponent(query)}`;
+    const searchUrl = `https://www.jiosaavn.com/api.php?__call=search.getResults&_format=json&_marker=0&cc=in&p=1&n=${limit * 2}&q=${encodeURIComponent(query)}`;
     const res = await fetch(searchUrl, {
       headers: {
         'User-Agent':
@@ -104,8 +148,11 @@ export async function searchSaavnTracks(query: string, limit: number = 20): Prom
 
     const tracks: Track[] = [];
     for (const item of rawResults) {
+      if (!isAuthenticSaavnSong(item, query)) continue;
       const track = mapSaavnSongToTrack(item);
-      if (track) tracks.push(track);
+      if (track && !tracks.some((t) => t.id === track.id)) {
+        tracks.push(track);
+      }
       if (tracks.length >= limit) break;
     }
 
@@ -148,6 +195,7 @@ export async function getSaavnTrending(
       const songs = data?.songs || [];
 
       for (const song of songs) {
+        if (!isAuthenticSaavnSong(song)) continue;
         const track = mapSaavnSongToTrack(song);
         if (track && !tracks.some((t) => t.id === track.id)) {
           tracks.push(track);
