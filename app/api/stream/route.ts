@@ -72,7 +72,9 @@ async function resolveYouTubeAudioStream(videoId: string): Promise<{ url: string
     urlCache.delete(videoId);
   }
 
+  let debugLog: any = {};
   const visitorData = await getVisitorData();
+  debugLog.visitorDataLength = visitorData.length;
 
   // Strategy 1: YouTube Innertube VisionOS Client over HTTP/1.1
   try {
@@ -122,12 +124,16 @@ async function resolveYouTubeAudioStream(videoId: string): Promise<{ url: string
       body: JSON.stringify(payload),
     });
 
+    debugLog.visionosStatus = res.status;
     if (res.status === 200) {
       const data = await res.json();
+      debugLog.visionosPlayability = data.playabilityStatus?.status;
+      debugLog.visionosReason = data.playabilityStatus?.reason;
       if (data.playabilityStatus?.status === 'OK') {
         const formats = (data.streamingData?.adaptiveFormats || []).filter(
           (f: any) => f.mimeType?.includes('audio') && f.url
         );
+        debugLog.visionosAudioCount = formats.length;
 
         if (formats.length > 0) {
           // Prefer itag 140 (audio/mp4 AAC 128kbps) for universal cross-platform support
@@ -148,6 +154,7 @@ async function resolveYouTubeAudioStream(videoId: string): Promise<{ url: string
       }
     }
   } catch (err: any) {
+    debugLog.visionosError = err?.message;
     console.warn(`VisionOS player extraction error for ${videoId}:`, err?.message);
   }
 
@@ -191,12 +198,16 @@ async function resolveYouTubeAudioStream(videoId: string): Promise<{ url: string
       body: JSON.stringify(payload),
     });
 
+    debugLog.tvStatus = res.status;
     if (res.status === 200) {
       const data = await res.json();
+      debugLog.tvPlayability = data.playabilityStatus?.status;
+      debugLog.tvReason = data.playabilityStatus?.reason;
       if (data.playabilityStatus?.status === 'OK') {
         const formats = (data.streamingData?.adaptiveFormats || []).filter(
           (f: any) => f.mimeType?.includes('audio') && f.url
         );
+        debugLog.tvAudioCount = formats.length;
 
         if (formats.length > 0) {
           const target = formats.find((f: any) => f.itag === 140) ||
@@ -216,6 +227,7 @@ async function resolveYouTubeAudioStream(videoId: string): Promise<{ url: string
       }
     }
   } catch (err: any) {
+    debugLog.tvError = err?.message;
     console.warn(`TVHTML5 player extraction error for ${videoId}:`, err?.message);
   }
 
@@ -232,10 +244,11 @@ async function resolveYouTubeAudioStream(videoId: string): Promise<{ url: string
       return { url: cliUrl, mimeType: mime };
     }
   } catch (cliErr: any) {
+    debugLog.cliError = cliErr?.message;
     console.warn(`CLI yt-dlp fallback unavailable for ${videoId}:`, cliErr?.message);
   }
 
-  throw new Error(`Unable to resolve authentic YouTube audio stream for ${videoId}`);
+  throw new Error(`Unable to resolve authentic YouTube audio stream for ${videoId}: ${JSON.stringify(debugLog)}`);
 }
 
 export async function GET(req: NextRequest) {
