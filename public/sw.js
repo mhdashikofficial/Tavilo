@@ -1,4 +1,4 @@
-const CACHE_NAME = 'tavilo-shell-v15';
+const CACHE_NAME = 'tavilo-shell-v16';
 const PRECACHE_ASSETS = [
   '/',
   '/manifest.webmanifest',
@@ -35,6 +35,11 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
+  // Only handle standard HTTP/HTTPS schemes (ignore chrome-extension:, moz-extension:, blob:, data:)
+  if (!event.request.url.startsWith('http://') && !event.request.url.startsWith('https://')) {
+    return;
+  }
+
   const url = new URL(event.request.url);
 
   // Skip audio streams, external media CDNs, and POST/PUT requests
@@ -74,7 +79,9 @@ self.addEventListener('fetch', (event) => {
         fetch(event.request)
           .then((networkResponse) => {
             if (networkResponse && networkResponse.status === 200) {
-              caches.open(CACHE_NAME).then((cache) => cache.put(event.request, networkResponse));
+              caches.open(CACHE_NAME).then((cache) => {
+                cache.put(event.request, networkResponse).catch(() => {});
+              }).catch(() => {});
             }
           })
           .catch(() => {});
@@ -86,7 +93,9 @@ self.addEventListener('fetch', (event) => {
             return networkResponse;
           }
           const responseToCache = networkResponse.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseToCache));
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(event.request, responseToCache).catch(() => {});
+          }).catch(() => {});
           return networkResponse;
         })
         .catch(() => caches.match(event.request));

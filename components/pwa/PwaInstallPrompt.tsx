@@ -23,6 +23,7 @@ export function PwaInstallPrompt() {
         .register('/sw.js')
         .then((reg) => {
           console.log('Tavilo ServiceWorker registered:', reg.scope);
+          reg.update().catch(() => {});
         })
         .catch((err) => {
           console.warn('ServiceWorker registration error:', err);

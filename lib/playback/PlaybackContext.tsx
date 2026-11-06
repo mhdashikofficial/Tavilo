@@ -499,6 +499,8 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
             rel: 0,
             iv_load_policy: 3,
             modestbranding: 1,
+            origin: typeof window !== 'undefined' ? window.location.origin : undefined,
+            enablejsapi: 1,
           },
           events: {
             onReady: (event: any) => {
