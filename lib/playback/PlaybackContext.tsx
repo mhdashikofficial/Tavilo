@@ -843,7 +843,7 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
                 } catch {}
               }
 
-              const nativeStreamUrl = `/api/stream?id=${encodeURIComponent(videoId)}`;
+              const nativeStreamUrl = `/api/stream?id=${encodeURIComponent(videoId)}&title=${encodeURIComponent(track.title)}&artist=${encodeURIComponent(track.artist)}`;
               isNativeAudioStreamRef.current = true;
               audioRef.current.loop = false;
               audioRef.current.src = nativeStreamUrl;
@@ -869,37 +869,31 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
               return;
             }
           } catch (err) {
-            console.warn('Native HTML5 /api/stream failed, falling back to YouTube iframe:', err);
+            console.warn('Native HTML5 /api/stream initial playback error, retrying fallback studio stream:', err);
+            // Secondary Audio Fallback: Direct studio resolver (keeps playback 100% native HTML5 audio!)
+            try {
+              const res = await fetch(`/api/audio?title=${encodeURIComponent(track.title)}&artist=${encodeURIComponent(track.artist)}`);
+              if (res.ok) {
+                const data = await res.json();
+                if (data.streamUrl && audioRef.current) {
+                  audioRef.current.src = data.streamUrl;
+                  await audioRef.current.play();
+                  if (playRequestIdRef.current !== currentRequestId) return;
+                  setIsPlaying(true);
+                  setIsLoading(false);
+                  requestWakeLock();
+                  return;
+                }
+              }
+            } catch (fallbackErr) {
+              console.warn('Fallback studio stream error:', fallbackErr);
+            }
           }
 
           if (playRequestIdRef.current !== currentRequestId) return;
-
-          // Ultimate Fallback: Embedded YouTube player (only if native stream fails)
-          isNativeAudioStreamRef.current = false;
-          if (audioRef.current) {
-            try {
-              audioRef.current.loop = true;
-              if (!audioRef.current.src.includes('silence.wav')) {
-                audioRef.current.src = SILENT_AUDIO_URI;
-              }
-              audioRef.current.volume = 1.0;
-              audioRef.current.play().catch(() => {});
-            } catch {}
-          }
-
-          if (isYtReadyRef.current && ytPlayerRef.current) {
-            try {
-              ytPlayerRef.current.loadVideoById(videoId);
-              ytPlayerRef.current.playVideo();
-              setIsPlaying(true);
-              setIsLoading(false);
-              requestWakeLock();
-            } catch (e) {
-              console.warn('Error loading YT video:', e);
-            }
-          } else {
-            pendingYtVideoIdRef.current = videoId;
-          }
+          setIsLoading(false);
+          setIsPlaying(false);
+          setError('Audio stream unavailable. Tap next to skip.');
         })();
       } else {
         isUserPausedRef.current = false;

@@ -19,6 +19,32 @@ export function isIndianOrRegionalQuery(query: string): boolean {
   return INDIAN_REGIONAL_KEYWORDS.some(k => q.includes(k));
 }
 
+function normalizeSearchQuery(query: string): string {
+  let q = query.trim();
+  // Split common joined artist names if user typed without spaces
+  const joinedFixes: [RegExp, string][] = [
+    [/\balanwalker\b/gi, 'alan walker'],
+    [/\btaylorswift\b/gi, 'taylor swift'],
+    [/\bedsheeran\b/gi, 'ed sheeran'],
+    [/\bjustinbieber\b/gi, 'justin bieber'],
+    [/\bbillieeilish\b/gi, 'billie eilish'],
+    [/\bcharlieputh\b/gi, 'charlie puth'],
+    [/\bshawnmendes\b/gi, 'shawn mendes'],
+    [/\bpostmalone\b/gi, 'post malone'],
+    [/\blanadelrey\b/gi, 'lana del rey'],
+    [/\bkatyperry\b/gi, 'katy perry'],
+    [/\bladygaga\b/gi, 'lady gaga'],
+    [/\bbritneyspears\b/gi, 'britney spears'],
+    [/\bbrunomars\b/gi, 'bruno mars'],
+    [/\barjit\b/gi, 'arijit'],
+    [/\bsushinshyam\b/gi, 'sushin shyam'],
+  ];
+  for (const [pattern, replacement] of joinedFixes) {
+    q = q.replace(pattern, replacement);
+  }
+  return q;
+}
+
 export class MusicProviderService {
   /**
    * Returns trending tracks (combining Saavn Hi-Fi master charts + seed catalog fallback)
@@ -188,15 +214,16 @@ export class MusicProviderService {
    * Search across all integrated providers (Audius, Jamendo, Seed)
    */
   public static async search(query: string, limit: number = 20): Promise<SearchResult> {
-    const qLower = query.toLowerCase().trim();
+    const cleanQ = normalizeSearchQuery(query);
+    const qLower = cleanQ.toLowerCase().trim();
     if (!qLower) {
       return { tracks: [], artists: [], albums: [], playlists: [] };
     }
 
     // 1. Search authentic Saavn master catalog AND YouTube original official releases in parallel
     const [saavnSettled, ytSettled] = await Promise.allSettled([
-      searchSaavnTracks(query, limit),
-      searchYouTube(query, limit),
+      searchSaavnTracks(cleanQ, limit),
+      searchYouTube(cleanQ, limit),
     ]);
 
     const saavnResults: Track[] = saavnSettled.status === 'fulfilled' ? saavnSettled.value : [];
@@ -214,19 +241,15 @@ export class MusicProviderService {
     // 3. Search Audius live catalog
     let audiusResults: Track[] = [];
     try {
-      audiusResults = await searchAudiusTracks(query, Math.min(limit, 8));
+      audiusResults = await searchAudiusTracks(cleanQ, Math.min(limit, 8));
     } catch (err) {
       console.warn('Audius search error:', err);
     }
 
-    const isIndian = isIndianOrRegionalQuery(query);
-
-    // If query is for Indian/regional music, prioritize Saavn's Indian studio masters.
-    // If query is for English/International music (e.g. "alanwalker faded", "coldplay", "adele"),
-    // prioritize YouTube's official original releases so the user gets the true unedited master!
-    const prioritizedSources = isIndian
-      ? [...saavnResults, ...youtubeResults, ...matchedSeedTracks, ...audiusResults]
-      : [...youtubeResults, ...saavnResults, ...matchedSeedTracks, ...audiusResults];
+    // Prioritize authentic 320kbps Saavn studio masters first (they play directly via native audio with zero minimize restrictions).
+    // Follow with YouTube releases (streamed via /api/stream as native audio).
+    // If Saavn has an authentic studio master, it wins deduplication; otherwise YouTube provides the authentic track!
+    const prioritizedSources = [...saavnResults, ...youtubeResults, ...matchedSeedTracks, ...audiusResults];
 
     // Deduplicate tracks by normalized title + artist
     const trackMap = new Map<string, Track>();

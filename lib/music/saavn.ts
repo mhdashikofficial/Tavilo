@@ -32,7 +32,7 @@ export function decryptSaavnMediaUrl(encryptedMediaUrl: string): string {
   }
 }
 
-const FAKE_NOISE_REGEX = /\b(tribute|karaoke|originally performed by|made famous by|in the style of|instrumental version|cover version|backing track|unofficial remix|sound-?a-?like)\b/i;
+const FAKE_NOISE_REGEX = /\b(tribute|karaoke|originally performed by|made famous by|in the style of|instrumental version|cover version|backing track|unofficial remix|sound-?a-?like|sped\s*up|slowed\s*(?:remix|version)?|nightcore|reverb|lofi|lo-fi|chipmunk|8d\s*audio|bass\s*boosted|tiktok\s*version)\b/i;
 const FAKE_ARTISTS = [
   'ultimate tribute stars',
   'karaoke hits',
@@ -78,6 +78,9 @@ export function isAuthenticSaavnSong(s: any, query?: string): boolean {
     }
     const combined = `${title} ${artist} ${album}`;
     if (FAKE_NOISE_REGEX.test(combined)) return false;
+
+    // Discard remixes or altered versions if user didn't ask for them
+    if (/\b(remix|instrumental|restrung)\b/i.test(title)) return false;
   }
 
   return true;
@@ -151,11 +154,27 @@ export async function searchSaavnTracks(query: string, limit: number = 20): Prom
     if (!res.ok) return [];
 
     const data = await res.json();
-    const rawResults = data?.results || [];
+    const rawResults: any[] = data?.results || [];
+
+    // Filter authentic tracks first
+    const authenticItems = rawResults.filter((item: any) => isAuthenticSaavnSong(item, query));
+
+    // Sort: 1) Clean titles without noise/parentheses first, 2) Highest play count descending
+    authenticItems.sort((a: any, b: any) => {
+      const aTitle = a.song || a.title || '';
+      const bTitle = b.song || b.title || '';
+      const aClean = !aTitle.includes('(') && !aTitle.includes('[');
+      const bClean = !bTitle.includes('(') && !bTitle.includes('[');
+      if (aClean && !bClean) return -1;
+      if (!aClean && bClean) return 1;
+
+      const aPlays = parseInt(a.play_count || 0, 10);
+      const bPlays = parseInt(b.play_count || 0, 10);
+      return bPlays - aPlays;
+    });
 
     const tracks: Track[] = [];
-    for (const item of rawResults) {
-      if (!isAuthenticSaavnSong(item, query)) continue;
+    for (const item of authenticItems) {
       const track = mapSaavnSongToTrack(item);
       if (track && !tracks.some((t) => t.id === track.id)) {
         tracks.push(track);
