@@ -1,10 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { execFile } from 'child_process';
-import CryptoJS from 'crypto-js';
+import { requestHttp1 } from '@/lib/music/http';
 
 export const dynamic = 'force-dynamic';
-
-const DES_KEY = CryptoJS.enc.Utf8.parse('38346591');
 
 interface CacheEntry {
   url: string;
@@ -14,24 +12,6 @@ interface CacheEntry {
 
 // In-memory cache for resolved direct audio URLs (valid for 4 hours)
 const urlCache = new Map<string, CacheEntry>();
-
-function decryptSaavnMediaUrl(encryptedMediaUrl: string): string {
-  if (!encryptedMediaUrl) return '';
-  try {
-    const decrypted = CryptoJS.DES.decrypt(
-      { ciphertext: CryptoJS.enc.Base64.parse(encryptedMediaUrl) } as any,
-      DES_KEY,
-      { mode: CryptoJS.mode.ECB, padding: CryptoJS.pad.Pkcs7 }
-    );
-    const raw = decrypted.toString(CryptoJS.enc.Utf8);
-    if (!raw || !raw.includes('.mp4')) return '';
-    return raw
-      .replace(/^http:\/\//i, 'https://')
-      .replace(/_(?:96|160|48|12)\.mp4/i, '_320.mp4');
-  } catch {
-    return '';
-  }
-}
 
 function getExecutableCandidates(): string[] {
   const isWindows = process.platform === 'win32';
@@ -77,7 +57,8 @@ function resolveYouTubeViaCli(videoId: string): Promise<string> {
 }
 
 /**
- * High-speed native audio stream extractor using YouTube Innertube Android Client API.
+ * High-speed native audio stream extractor using YouTube Innertube Android Client API over HTTP/1.1.
+ * Using HTTP/1.1 prevents Node.js undici ERR_HTTP2_SESSION_ERROR: Session closed with error code 11 (GOAWAY).
  * 100% pure HTTPS fetch — zero dependency on Python, yt-dlp binaries, or third-party scrapers.
  * Completely immune to Vercel/cloud serverless runtime limitations.
  */
@@ -90,9 +71,9 @@ async function resolveYouTubeAudioStream(videoId: string): Promise<{ url: string
     urlCache.delete(videoId);
   }
 
-  // Strategy 1: Official YouTube Innertube Android Client (Returns direct GoogleVideo stream URLs)
+  // Strategy 1: Official YouTube Innertube Android Client over HTTP/1.1 (Returns direct GoogleVideo stream URLs)
   try {
-    const innertubeBody = {
+    const innertubeBody = JSON.stringify({
       context: {
         client: {
           clientName: 'ANDROID',
@@ -105,19 +86,21 @@ async function resolveYouTubeAudioStream(videoId: string): Promise<{ url: string
         },
       },
       videoId,
-    };
-
-    const res = await fetch('https://www.youtube.com/youtubei/v1/player?key=AIzaSyA8eiZmM1FaDVjRy-df2KTyQ_vz_yYM39w', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'User-Agent': 'com.google.android.youtube/20.10.38 (Linux; U; Android 14) gzip',
-      },
-      body: JSON.stringify(innertubeBody),
-      cache: 'no-store',
     });
 
-    if (res.ok) {
+    const res = await requestHttp1(
+      'https://www.youtube.com/youtubei/v1/player?key=AIzaSyA8eiZmM1FaDVjRy-df2KTyQ_vz_yYM39w',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': 'com.google.android.youtube/20.10.38 (Linux; U; Android 14) gzip',
+        },
+        body: innertubeBody,
+      }
+    );
+
+    if (res.status === 200) {
       const data = await res.json();
       if (data.playabilityStatus?.status === 'OK') {
         const formats = (data.streamingData?.adaptiveFormats || []).filter(
@@ -176,7 +159,7 @@ export async function GET(req: NextRequest) {
   try {
     const { url: directUrl, mimeType } = await resolveYouTubeAudioStream(videoId);
 
-    // Stream through server proxy with Range support for seamless seeking and background playback
+    // Stream through server proxy over HTTP/1.1 with Range support for seamless seeking and background playback
     const clientRange = req.headers.get('range');
     const upstreamHeaders: Record<string, string> = {
       'User-Agent': 'com.google.android.youtube/20.10.38 (Linux; U; Android 14)',
@@ -186,11 +169,12 @@ export async function GET(req: NextRequest) {
       upstreamHeaders['Range'] = clientRange;
     }
 
-    const upstreamRes = await fetch(directUrl, {
+    const upstreamRes = await requestHttp1(directUrl, {
+      method: 'GET',
       headers: upstreamHeaders,
     });
 
-    if (!upstreamRes.ok && upstreamRes.status !== 206) {
+    if (upstreamRes.status !== 200 && upstreamRes.status !== 206) {
       urlCache.delete(videoId);
       return NextResponse.json(
         { error: 'Upstream audio stream not accessible' },
@@ -199,19 +183,37 @@ export async function GET(req: NextRequest) {
     }
 
     const responseHeaders = new Headers();
-    responseHeaders.set('Content-Type', upstreamRes.headers.get('content-type') || mimeType);
+    responseHeaders.set('Content-Type', upstreamRes.headers['content-type'] || mimeType);
     responseHeaders.set('Accept-Ranges', 'bytes');
     responseHeaders.set('Access-Control-Allow-Origin', '*');
 
-    if (upstreamRes.headers.has('content-length')) {
-      responseHeaders.set('Content-Length', upstreamRes.headers.get('content-length')!);
+    if (upstreamRes.headers['content-length']) {
+      responseHeaders.set('Content-Length', upstreamRes.headers['content-length']);
     }
-    if (upstreamRes.headers.has('content-range')) {
-      responseHeaders.set('Content-Range', upstreamRes.headers.get('content-range')!);
+    if (upstreamRes.headers['content-range']) {
+      responseHeaders.set('Content-Range', upstreamRes.headers['content-range']);
     }
     responseHeaders.set('Cache-Control', 'public, max-age=14400');
 
-    return new Response(upstreamRes.body, {
+    // Convert Node Readable to Web ReadableStream for standard Response streaming
+    const webStream = new ReadableStream({
+      start(controller) {
+        upstreamRes.stream.on('data', (chunk) => {
+          controller.enqueue(chunk);
+        });
+        upstreamRes.stream.on('end', () => {
+          controller.close();
+        });
+        upstreamRes.stream.on('error', (err) => {
+          controller.error(err);
+        });
+      },
+      cancel() {
+        upstreamRes.stream.destroy();
+      },
+    });
+
+    return new Response(webStream, {
       status: upstreamRes.status,
       headers: responseHeaders,
     });
@@ -236,7 +238,7 @@ export async function HEAD(req: NextRequest) {
   try {
     const { url: directUrl, mimeType } = await resolveYouTubeAudioStream(videoId);
 
-    const upstreamRes = await fetch(directUrl, {
+    const upstreamRes = await requestHttp1(directUrl, {
       method: 'GET',
       headers: {
         'Range': 'bytes=0-1',
@@ -245,11 +247,11 @@ export async function HEAD(req: NextRequest) {
     });
 
     const responseHeaders = new Headers();
-    responseHeaders.set('Content-Type', upstreamRes.headers.get('content-type') || mimeType);
+    responseHeaders.set('Content-Type', upstreamRes.headers['content-type'] || mimeType);
     responseHeaders.set('Accept-Ranges', 'bytes');
     responseHeaders.set('Access-Control-Allow-Origin', '*');
-    if (upstreamRes.headers.has('content-range')) {
-      const cr = upstreamRes.headers.get('content-range')!;
+    if (upstreamRes.headers['content-range']) {
+      const cr = upstreamRes.headers['content-range'];
       const total = cr.split('/')[1];
       if (total && total !== '*') {
         responseHeaders.set('Content-Length', total);

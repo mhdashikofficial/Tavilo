@@ -1,4 +1,4 @@
-const CACHE_NAME = 'tavilo-shell-v13';
+const CACHE_NAME = 'tavilo-shell-v14';
 const PRECACHE_ASSETS = [
   '/',
   '/manifest.webmanifest',

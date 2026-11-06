@@ -1,5 +1,6 @@
 import { Track } from '@/types/music';
 import { isMalayalamTrack } from '@/lib/recommendations/sonicGraph';
+import { requestHttp1 } from '@/lib/music/http';
 
 function parseDuration(durationStr?: string): number {
   if (!durationStr) return 210;
@@ -123,31 +124,32 @@ function parseSectionListToTracks(sectionList: any[], query: string, limit: numb
 }
 
 export async function searchYouTube(query: string, limit: number = 20): Promise<Track[]> {
-  // Strategy 1: YouTube Official Innertube JSON Search API
-  // Structured, high-speed, never broken by HTML changes or datacenter IP blocks
+  // Strategy 1: YouTube Official Innertube JSON Search API over HTTP/1.1
+  // Using HTTP/1.1 prevents Node.js undici ERR_HTTP2_SESSION_ERROR: Session closed with error code 11 (GOAWAY).
   try {
-    const innertubeRes = await fetch('https://www.youtube.com/youtubei/v1/search', {
+    const innertubeBody = JSON.stringify({
+      context: {
+        client: {
+          clientName: 'WEB',
+          clientVersion: '2.20231201.00.00',
+          hl: 'en',
+          gl: 'US',
+        },
+      },
+      query,
+    });
+
+    const innertubeRes = await requestHttp1('https://www.youtube.com/youtubei/v1/search', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'User-Agent':
           'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
       },
-      body: JSON.stringify({
-        context: {
-          client: {
-            clientName: 'WEB',
-            clientVersion: '2.20231201.00.00',
-            hl: 'en',
-            gl: 'US',
-          },
-        },
-        query,
-      }),
-      cache: 'no-store',
+      body: innertubeBody,
     });
 
-    if (innertubeRes.ok) {
+    if (innertubeRes.status === 200) {
       const data = await innertubeRes.json();
       const sectionList =
         data.contents?.twoColumnSearchResultsRenderer?.primaryContents?.sectionListRenderer?.contents;
@@ -160,18 +162,17 @@ export async function searchYouTube(query: string, limit: number = 20): Promise<
     console.warn('Innertube search failed, trying fallback parser:', err?.message);
   }
 
-  // Strategy 2: HTML Scrape fallback with balanced JSON parser
+  // Strategy 2: HTML Scrape fallback over HTTP/1.1 with balanced JSON parser
   try {
-    const res = await fetch(`https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`, {
+    const res = await requestHttp1(`https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`, {
       headers: {
         'User-Agent':
           'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Accept-Language': 'en-US,en;q=0.9',
       },
-      cache: 'no-store',
     });
 
-    if (!res.ok) {
+    if (res.status !== 200) {
       console.warn('YouTube HTML search response status:', res.status);
       return [];
     }
