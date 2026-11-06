@@ -6,6 +6,19 @@ import { searchYouTube } from './youtube';
 import { searchSaavnTracks, getSaavnTrending } from './saavn';
 import { getSonicProfileForTrack, isMalayalamTrack } from '@/lib/recommendations/sonicGraph';
 
+const INDIAN_REGIONAL_KEYWORDS = [
+  'malayalam', 'tamil', 'hindi', 'telugu', 'kannada', 'bollywood', 'kollywood', 'tollywood', 'mollywood',
+  'sushin', 'shyam', 'dabzee', 'hesham', 'anirudh', 'rahman', 'arijit', 'pritam', 'yesudas', 'chithra',
+  'sid sriram', 'gopi sundar', 'jakes bejoy', 'shaan rahman', 'vidyasagar', 'keeravani', 'thaman',
+  'santhosh narayanan', 'vijay', 'ajith', 'allu arjun', 'mohanlal', 'mammootty', 'dq', 'dulquer',
+  'prithviraj', 'tovino', 'fahadh', 'aavesham', 'manjummel', 'premalu', 'hridayam', 'darshana', 'jaada',
+];
+
+export function isIndianOrRegionalQuery(query: string): boolean {
+  const q = query.toLowerCase();
+  return INDIAN_REGIONAL_KEYWORDS.some(k => q.includes(k));
+}
+
 export class MusicProviderService {
   /**
    * Returns trending tracks (combining Saavn Hi-Fi master charts + seed catalog fallback)
@@ -206,11 +219,18 @@ export class MusicProviderService {
       console.warn('Audius search error:', err);
     }
 
+    const isIndian = isIndianOrRegionalQuery(query);
+
+    // If query is for Indian/regional music, prioritize Saavn's Indian studio masters.
+    // If query is for English/International music (e.g. "alanwalker faded", "coldplay", "adele"),
+    // prioritize YouTube's official original releases so the user gets the true unedited master!
+    const prioritizedSources = isIndian
+      ? [...saavnResults, ...youtubeResults, ...matchedSeedTracks, ...audiusResults]
+      : [...youtubeResults, ...saavnResults, ...matchedSeedTracks, ...audiusResults];
+
     // Deduplicate tracks by normalized title + artist
-    // Saavn's clean authentic studio master is prioritized when available.
-    // When Saavn is missing the original English song (or only had fake covers), YouTube's official copy takes pride of place!
     const trackMap = new Map<string, Track>();
-    for (const t of [...saavnResults, ...youtubeResults, ...matchedSeedTracks, ...audiusResults]) {
+    for (const t of prioritizedSources) {
       const normKey = `${t.title.toLowerCase().replace(/[^a-z0-9]/g, '')}-${t.artist.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
       if (!trackMap.has(normKey)) {
         trackMap.set(normKey, t);

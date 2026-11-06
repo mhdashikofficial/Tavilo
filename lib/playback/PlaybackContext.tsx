@@ -831,57 +831,9 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
 
         const videoId = track.streamUrl.replace('yt-', '');
 
-        // Attempt 1: Fetch native 320kbps MP4 audio stream from internal resolver for 100% background playback
         (async () => {
-          try {
-            const res = await fetch(
-              `/api/audio?title=${encodeURIComponent(track.title)}&artist=${encodeURIComponent(track.artist)}&query=${encodeURIComponent(`${track.title} ${track.artist}`)}`
-            );
-            if (playRequestIdRef.current !== currentRequestId) return;
-            if (res.ok) {
-              const data = await res.json();
-              if (playRequestIdRef.current !== currentRequestId) return;
-              if (data.success && data.streamUrl && audioRef.current) {
-                // Stop YouTube iframe if it was active
-                if (isYtReadyRef.current && ytPlayerRef.current) {
-                  try {
-                    ytPlayerRef.current.pauseVideo();
-                  } catch {}
-                }
-
-                isNativeAudioStreamRef.current = true;
-                audioRef.current.loop = false;
-                audioRef.current.src = data.streamUrl;
-                audioRef.current.volume = volume;
-                await audioRef.current.play();
-
-                if (playRequestIdRef.current !== currentRequestId) return;
-                setIsPlaying(true);
-                setIsLoading(false);
-                requestWakeLock();
-
-                if ('mediaSession' in navigator) {
-                  navigator.mediaSession.metadata = new MediaMetadata({
-                    title: data.title || track.title,
-                    artist: data.artist || track.artist,
-                    album: data.album || track.album,
-                    artwork: [
-                      { src: data.artwork || track.artwork, sizes: '512x512', type: 'image/jpeg' },
-                    ],
-                  });
-                  navigator.mediaSession.playbackState = 'playing';
-                }
-                return;
-              }
-            }
-          } catch (e) {
-            console.warn('Native MP4 audio resolver fallback to YouTube iframe:', e);
-          }
-
-          if (playRequestIdRef.current !== currentRequestId) return;
-
-          // Attempt 2: Native HTML5 Audio Streaming via /api/stream
-          // Streams the 100% original copy directly from YouTube as native audio.
+          // Native HTML5 Audio Streaming via /api/stream
+          // Plays the 100% genuine original copy directly from YouTube as native audio.
           // Native HTML5 audio works 100% in background, on minimize, and with screen locked!
           try {
             if (audioRef.current) {
@@ -922,7 +874,7 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
 
           if (playRequestIdRef.current !== currentRequestId) return;
 
-          // Fallback to YouTube iframe player if native stream is not found
+          // Ultimate Fallback: Embedded YouTube player (only if native stream fails)
           isNativeAudioStreamRef.current = false;
           if (audioRef.current) {
             try {
