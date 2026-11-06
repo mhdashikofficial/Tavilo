@@ -78,7 +78,7 @@ export async function searchYouTube(query: string, limit: number = 20): Promise<
           'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Accept-Language': 'en-US,en;q=0.9',
       },
-      next: { revalidate: 3600 },
+      cache: 'no-store',
     });
 
     if (!res.ok) {
@@ -87,10 +87,45 @@ export async function searchYouTube(query: string, limit: number = 20): Promise<
     }
 
     const html = await res.text();
-    const match = html.match(/ytInitialData\s*=\s*({.+?});<\/script>/);
-    if (!match) return [];
+    let data: any = null;
 
-    const data = JSON.parse(match[1]);
+    const startPattern = 'ytInitialData';
+    const startIdx = html.indexOf(startPattern);
+    if (startIdx !== -1) {
+      const jsonStart = html.indexOf('{', startIdx + startPattern.length);
+      if (jsonStart !== -1) {
+        let braceCount = 0;
+        let jsonEnd = -1;
+        for (let i = jsonStart; i < html.length; i++) {
+          if (html[i] === '{') braceCount++;
+          else if (html[i] === '}') {
+            braceCount--;
+            if (braceCount === 0) {
+              jsonEnd = i + 1;
+              break;
+            }
+          }
+        }
+        if (jsonEnd !== -1) {
+          try {
+            data = JSON.parse(html.slice(jsonStart, jsonEnd));
+          } catch (e) {
+            console.warn('Failed to parse balanced JSON for ytInitialData:', e);
+          }
+        }
+      }
+    }
+
+    if (!data) {
+      const match = html.match(/ytInitialData\s*=\s*({.+?});\s*<\/script>/s);
+      if (match) {
+        try {
+          data = JSON.parse(match[1]);
+        } catch {}
+      }
+    }
+
+    if (!data) return [];
     const sectionList =
       data.contents?.twoColumnSearchResultsRenderer?.primaryContents?.sectionListRenderer?.contents;
     if (!sectionList || !Array.isArray(sectionList)) return [];
