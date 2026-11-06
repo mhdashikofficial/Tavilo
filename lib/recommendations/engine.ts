@@ -7,16 +7,35 @@ export interface ScoredTrack {
   reasons: string[];
 }
 
+export function sanitizePreferences(preferences?: Partial<UserPreferences> | null): UserPreferences {
+  return {
+    likedTrackIds: Array.isArray(preferences?.likedTrackIds) ? preferences.likedTrackIds : [],
+    dislikedTrackIds: Array.isArray(preferences?.dislikedTrackIds) ? preferences.dislikedTrackIds : [],
+    excludedTrackIds: Array.isArray(preferences?.excludedTrackIds) ? preferences.excludedTrackIds : [],
+    excludedArtistNames: Array.isArray(preferences?.excludedArtistNames) ? preferences.excludedArtistNames : [],
+    followedArtistNames: Array.isArray(preferences?.followedArtistNames) ? preferences.followedArtistNames : [],
+    savedAlbumIds: Array.isArray(preferences?.savedAlbumIds) ? preferences.savedAlbumIds : [],
+    favoriteGenres: Array.isArray(preferences?.favoriteGenres) ? preferences.favoriteGenres : [],
+    genreWeights: preferences?.genreWeights || {},
+    artistPlayCounts: preferences?.artistPlayCounts || {},
+    recentlyPlayed: Array.isArray(preferences?.recentlyPlayed) ? preferences.recentlyPlayed : [],
+    tuneMixMode: preferences?.tuneMixMode || 'balanced',
+    autoplayEnabled: preferences?.autoplayEnabled ?? true,
+  };
+}
+
 export class RecommendationEngine {
   /**
    * Scores a candidate track based on sonic compatibility, user preferences, and current listening context.
    */
   public static scoreTrack(
     candidate: Track,
-    preferences: UserPreferences,
+    rawPreferences: UserPreferences,
     currentTrack: Track | null,
-    recentHistory: ListeningHistoryItem[] = []
+    recentHistory?: ListeningHistoryItem[]
   ): ScoredTrack {
+    const preferences = sanitizePreferences(rawPreferences);
+    const history = Array.isArray(recentHistory) ? recentHistory : preferences.recentlyPlayed;
     const reasons: string[] = [];
     let score = 5.0; // base score
 
@@ -151,7 +170,7 @@ export class RecommendationEngine {
       // E. Artist Proximity & Variety
       if (candidateArtistLower === currentArtistLower) {
         // Mild bonus if user likes this artist, but check if played recently
-        const recentSameArtist = recentHistory.slice(0, 3).some(
+        const recentSameArtist = history.slice(0, 3).some(
           h => h.track.artist.toLowerCase() === candidateArtistLower
         );
         if (recentSameArtist) {
@@ -191,7 +210,7 @@ export class RecommendationEngine {
     }
 
     // 5. Recency and Skip Penalties
-    const recentIndex = recentHistory.findIndex(h => h.track.id === candidate.id);
+    const recentIndex = history.findIndex(h => h.track.id === candidate.id);
     if (recentIndex !== -1) {
       const recencyPenalty = Math.max(2, 10 - recentIndex);
       score -= recencyPenalty;
@@ -250,15 +269,16 @@ export class RecommendationEngine {
   ): Track | null {
     if (!candidates || candidates.length === 0) return null;
 
+    const safePrefs = sanitizePreferences(preferences);
     const scored = candidates
-      .map(track => this.scoreTrack(track, preferences, currentTrack, recentHistory))
+      .map(track => this.scoreTrack(track, safePrefs, currentTrack, recentHistory))
       .filter(s => s.score > 2.0) // Require minimum compatibility
       .sort((a, b) => b.score - a.score);
 
     if (scored.length === 0) {
       // Fallback: pick any track with score > 0
       const anyScored = candidates
-        .map(track => this.scoreTrack(track, preferences, currentTrack, recentHistory))
+        .map(track => this.scoreTrack(track, safePrefs, currentTrack, recentHistory))
         .filter(s => s.score > 0)
         .sort((a, b) => b.score - a.score);
       return anyScored.length > 0 ? anyScored[0].track : candidates[0];
@@ -290,14 +310,22 @@ export class RecommendationEngine {
     count: number = 8,
     existingQueueIds: string[] = []
   ): Track[] {
+    const safePrefs = sanitizePreferences(preferences);
     const available = candidates.filter(
       c => !existingQueueIds.includes(c.id) && (currentTrack ? c.id !== currentTrack.id : true)
     );
 
-    const scored = available
-      .map(track => this.scoreTrack(track, preferences, currentTrack, preferences.recentlyPlayed))
+    let scored = available
+      .map(track => this.scoreTrack(track, safePrefs, currentTrack, safePrefs.recentlyPlayed))
       .filter(s => s.score > 2.0) // Only include genuinely compatible tracks
       .sort((a, b) => b.score - a.score);
+
+    if (scored.length === 0 && available.length > 0) {
+      scored = available
+        .map(track => this.scoreTrack(track, safePrefs, currentTrack, safePrefs.recentlyPlayed))
+        .filter(s => s.score > -20)
+        .sort((a, b) => b.score - a.score);
+    }
 
     const result: Track[] = [];
     const usedArtists: Set<string> = new Set();
@@ -311,6 +339,10 @@ export class RecommendationEngine {
         result.push(item.track);
         usedArtists.add(art);
       }
+    }
+
+    if (result.length === 0 && available.length > 0) {
+      return available.slice(0, count);
     }
 
     return result;
