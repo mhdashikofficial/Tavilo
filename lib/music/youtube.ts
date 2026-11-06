@@ -122,16 +122,16 @@ export async function searchYouTube(query: string, limit: number = 20): Promise<
         tracks.push({
           id: `yt-${videoId}`,
           providerId: 'youtube',
-          providerName: 'YouTube Music',
+          providerName: 'YouTube Official',
           title,
           artist,
           artists: [artist],
-          album: isMalayalam ? 'Malayalam Hits' : 'YouTube Release',
+          album: isMalayalam ? 'Malayalam Hits' : 'YouTube Original Release',
           artwork,
           duration,
-          streamUrl: videoId, // YouTube video ID used by YouTube IFrame Player
+          streamUrl: videoId, // YouTube video ID used by audio stream pipeline
           playbackCapability: 'playable',
-          playbackSource: 'YouTube Official Embedded Player',
+          playbackSource: 'Original Master Audio',
           licenseName: 'YouTube Standard License',
           licenseUrl: 'https://www.youtube.com/t/terms',
           genre: isMalayalam ? 'Malayalam' : 'Music',

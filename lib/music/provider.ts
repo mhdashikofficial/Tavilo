@@ -76,16 +76,16 @@ export class MusicProviderService {
         const ytTracks = ytSettled.status === 'fulfilled' ? ytSettled.value : [];
 
         const trackMap = new Map<string, Track>();
-        // Interleave authentic Saavn studio masters and YouTube Billboard top hits
-        const maxLen = Math.max(saavnTracks.length, ytTracks.length);
+        // Prioritize authentic YouTube Billboard top hits for original international audio
+        const maxLen = Math.max(ytTracks.length, saavnTracks.length);
         for (let i = 0; i < maxLen; i++) {
-          if (saavnTracks[i]) {
-            const key = `${saavnTracks[i].title.toLowerCase()} - ${saavnTracks[i].artist.toLowerCase()}`;
-            if (!trackMap.has(key)) trackMap.set(key, saavnTracks[i]);
-          }
           if (ytTracks[i]) {
             const key = `${ytTracks[i].title.toLowerCase()} - ${ytTracks[i].artist.toLowerCase()}`;
             if (!trackMap.has(key)) trackMap.set(key, ytTracks[i]);
+          }
+          if (saavnTracks[i]) {
+            const key = `${saavnTracks[i].title.toLowerCase()} - ${saavnTracks[i].artist.toLowerCase()}`;
+            if (!trackMap.has(key)) trackMap.set(key, saavnTracks[i]);
           }
         }
         const blended = Array.from(trackMap.values()).slice(0, limit);
@@ -246,10 +246,14 @@ export class MusicProviderService {
       console.warn('Audius search error:', err);
     }
 
-    // Prioritize authentic 320kbps Saavn studio masters first (they play directly via native audio with zero minimize restrictions).
-    // Follow with YouTube releases (streamed via /api/stream as native audio).
-    // If Saavn has an authentic studio master, it wins deduplication; otherwise YouTube provides the authentic track!
-    const prioritizedSources = [...saavnResults, ...youtubeResults, ...matchedSeedTracks, ...audiusResults];
+    const isIndian = isIndianOrRegionalQuery(cleanQ);
+
+    // If query is for Indian/regional music (Malayalam, Tamil, Hindi, etc.), prioritize Saavn's Indian studio masters.
+    // If query is for English/International music (e.g. "alanwalker faded", "coldplay", "adele", "faded", etc.),
+    // prioritize YouTube's official original releases so the user gets the 100% genuine original copy!
+    const prioritizedSources = isIndian
+      ? [...saavnResults, ...youtubeResults, ...matchedSeedTracks, ...audiusResults]
+      : [...youtubeResults, ...saavnResults, ...matchedSeedTracks, ...audiusResults];
 
     // Deduplicate tracks by normalized title + artist
     const trackMap = new Map<string, Track>();
