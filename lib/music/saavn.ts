@@ -145,15 +145,19 @@ export function mapSaavnSongToTrack(s: any): Track | null {
   };
 }
 
+const SAAVN_FETCH_HEADERS = {
+  'User-Agent':
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  'Accept-Language': 'en-US,en;q=0.9',
+  'X-Forwarded-For': '103.38.12.245',
+  'CF-IPCountry': 'IN',
+};
+
 export async function searchSaavnTracks(query: string, limit: number = 20): Promise<Track[]> {
   try {
     const searchUrl = `https://www.jiosaavn.com/api.php?__call=search.getResults&_format=json&_marker=0&cc=in&p=1&n=${limit * 2}&q=${encodeURIComponent(query)}`;
     const res = await fetch(searchUrl, {
-      headers: {
-        'User-Agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept-Language': 'en-US,en;q=0.9',
-      },
+      headers: SAAVN_FETCH_HEADERS,
       cache: 'no-store',
     });
 
@@ -229,10 +233,7 @@ export async function getSaavnTrending(
     for (const listid of playlistIds) {
       const url = `https://www.jiosaavn.com/api.php?__call=playlist.getDetails&_format=json&_marker=0&cc=in&listid=${listid}`;
       const res = await fetch(url, {
-        headers: {
-          'User-Agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        },
+        headers: SAAVN_FETCH_HEADERS,
         next: { revalidate: 14400 }, // Cache chart for 4 hours
       });
 
