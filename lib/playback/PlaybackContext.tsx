@@ -4,9 +4,49 @@ import React, { createContext, useContext, useEffect, useRef, useState, useCallb
 import { Track, RepeatMode } from '@/types/music';
 import { useLibrary } from '@/lib/library/LibraryContext';
 import { RecommendationEngine } from '@/lib/recommendations/engine';
-import { MusicProviderService } from '@/lib/music/provider';
 import { SEED_TRACKS } from '@/lib/music/seed';
 import { isMalayalamTrack } from '@/lib/recommendations/sonicGraph';
+
+async function fetchTailoredRecommendations(
+  currentTrack: Track,
+  preferences: any,
+  limit: number = 12,
+  existingQueueIds: string[] = []
+): Promise<Track[]> {
+  try {
+    const res = await fetch('/api/recommendations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        currentTrack,
+        preferences,
+        limit,
+        existingQueueIds,
+      }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data.recommendations) && data.recommendations.length > 0) {
+        return data.recommendations;
+      }
+    }
+  } catch (err) {
+    console.warn('Failed to fetch recommendations from /api/recommendations:', err);
+  }
+
+  // Fallback to local seeds without making unauthenticated external calls from browser
+  const isMalayalam = isMalayalamTrack(currentTrack);
+  const pool = isMalayalam
+    ? SEED_TRACKS.filter((t) => isMalayalamTrack(t))
+    : SEED_TRACKS.filter((t) => !isMalayalamTrack(t));
+  return RecommendationEngine.generateRecommendationQueue(
+    pool.length > 0 ? pool : SEED_TRACKS,
+    preferences,
+    currentTrack,
+    limit,
+    existingQueueIds
+  );
+}
 
 declare global {
   interface Window {
@@ -403,13 +443,8 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
     if (preferences.autoplayEnabled && currentTrack) {
       try {
         setIsLoading(true);
-        const candidates = await MusicProviderService.getTailoredCandidates(currentTrack, preferences);
-        const nextChoice = RecommendationEngine.selectNextTrack(
-          candidates,
-          preferences,
-          currentTrack,
-          preferences.recentlyPlayed
-        );
+        const recommendations = await fetchTailoredRecommendations(currentTrack, preferences, 6);
+        const nextChoice = recommendations[0];
 
         if (nextChoice) {
           if (currentTrack) {
@@ -794,32 +829,12 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
         // Asynchronously generate tailored taste queue based on user preferences and this song
         (async () => {
           try {
-            const candidates = await MusicProviderService.getTailoredCandidates(track, preferences);
-            const tasteQueue = RecommendationEngine.generateRecommendationQueue(
-              candidates,
-              preferences,
-              track,
-              12,
-              [track.id]
-            );
+            const tasteQueue = await fetchTailoredRecommendations(track, preferences, 12, [track.id]);
             if (playRequestIdRef.current === currentRequestId) {
               setQueue(tasteQueue);
             }
           } catch (err) {
             console.warn('Failed to populate taste queue:', err);
-            const pool = isMalayalamTrack(track)
-              ? SEED_TRACKS.filter((t) => isMalayalamTrack(t))
-              : SEED_TRACKS.filter((t) => !isMalayalamTrack(t));
-            const fallbackQueue = RecommendationEngine.generateRecommendationQueue(
-              pool.length > 0 ? pool : SEED_TRACKS,
-              preferences,
-              track,
-              6,
-              [track.id]
-            );
-            if (playRequestIdRef.current === currentRequestId) {
-              setQueue(fallbackQueue);
-            }
           }
         })();
       }
@@ -1031,13 +1046,8 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
     if (currentTrack) {
       try {
         setIsLoading(true);
-        const candidates = await MusicProviderService.getTailoredCandidates(currentTrack, preferences);
-        const nextChoice = RecommendationEngine.selectNextTrack(
-          candidates,
-          preferences,
-          currentTrack,
-          preferences.recentlyPlayed
-        );
+        const recommendations = await fetchTailoredRecommendations(currentTrack, preferences, 6);
+        const nextChoice = recommendations[0];
         if (nextChoice) {
           if (currentTrack) {
             setHistory(prev => [currentTrack, ...prev].slice(0, 30));

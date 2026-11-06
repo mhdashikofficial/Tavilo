@@ -1,4 +1,4 @@
-const CACHE_NAME = 'tavilo-shell-v14';
+const CACHE_NAME = 'tavilo-shell-v15';
 const PRECACHE_ASSETS = [
   '/',
   '/manifest.webmanifest',
@@ -80,14 +80,16 @@ self.addEventListener('fetch', (event) => {
           .catch(() => {});
         return cachedResponse;
       }
-      return fetch(event.request).then((networkResponse) => {
-        if (!networkResponse || networkResponse.status !== 200 || networkResponse.type !== 'basic') {
+      return fetch(event.request)
+        .then((networkResponse) => {
+          if (!networkResponse || networkResponse.status !== 200 || networkResponse.type !== 'basic') {
+            return networkResponse;
+          }
+          const responseToCache = networkResponse.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseToCache));
           return networkResponse;
-        }
-        const responseToCache = networkResponse.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseToCache));
-        return networkResponse;
-      });
+        })
+        .catch(() => caches.match(event.request));
     })
   );
 });

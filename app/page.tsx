@@ -45,6 +45,13 @@ export default function HomePage() {
   const [isLoadingViral, setIsLoadingViral] = useState<boolean>(true);
   const [activeCategory, setActiveCategory] = useState<'all' | 'malayalam' | 'english' | 'viral' | 'foryou'>('all');
   const [isTuneMixOpen, setTuneMixOpen] = useState<boolean>(false);
+  const [mounted, setMounted] = useState<boolean>(false);
+  const [greeting, setGreeting] = useState<string>('Welcome to Tavilo');
+
+  useEffect(() => {
+    setMounted(true);
+    setGreeting(getTimeGreeting());
+  }, []);
 
   // Fetch Malayalam Trending from YouTube
   useEffect(() => {
@@ -150,14 +157,12 @@ export default function HomePage() {
     }
   }, [englishTracks, malayalamTracks, viralTracks, preferences]);
 
-  const greeting = getTimeGreeting();
-
   // Quick Items (Liked songs badge + Curated Playlists with YouTube thumbnails)
   const quickItems = [
     {
       id: 'liked-quick',
       title: 'Liked Songs',
-      count: `${likedTracks.length} tracks`,
+      count: mounted ? `${likedTracks.length} tracks` : 'Favorite tracks',
       artwork: likedTracks.length > 0 && likedTracks[0].artwork
         ? likedTracks[0].artwork
         : 'https://i.ytimg.com/vi/60ItHLz5WEA/hqdefault.jpg',
@@ -222,7 +227,7 @@ export default function HomePage() {
                 className="flex items-center space-x-2 px-4 py-2.5 rounded-2xl bg-tavilo-card hover:bg-tavilo-surface border border-tavilo-border text-white text-xs font-semibold transition-all shadow-md"
               >
                 <Sliders className="w-3.5 h-3.5 text-tavilo-violet" />
-                <span>Tune Mix: {preferences.tuneMixMode}</span>
+                <span>Tune Mix: {mounted ? preferences.tuneMixMode : 'balanced'}</span>
               </button>
             </div>
           </div>

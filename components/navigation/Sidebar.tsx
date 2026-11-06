@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
@@ -24,6 +24,11 @@ interface SidebarProps {
 export function Sidebar({ onOpenTuneMix }: SidebarProps) {
   const pathname = usePathname();
   const { playlists, likedTracks, createPlaylist } = useLibrary();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const navItems = [
     { label: 'Home', href: '/', icon: Home },
@@ -120,7 +125,7 @@ export function Sidebar({ onOpenTuneMix }: SidebarProps) {
           <div className="w-6 h-6 rounded-md bg-gradient-to-br from-tavilo-green to-emerald-700 flex items-center justify-center text-black flex-shrink-0">
             <Heart className="w-3.5 h-3.5 fill-current" />
           </div>
-          <span className="truncate">Liked Songs ({likedTracks.length})</span>
+          <span className="truncate">Liked Songs {mounted ? `(${likedTracks.length})` : ''}</span>
         </Link>
 
         {playlists.map((pl) => (
