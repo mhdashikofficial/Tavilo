@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { execFile } from 'child_process';
 import { requestHttp1 } from '@/lib/music/http';
+import { getVisitorData } from '@/lib/music/visitor';
 
 export const dynamic = 'force-dynamic';
 
@@ -43,7 +44,7 @@ function resolveYouTubeViaCli(videoId: string): Promise<string> {
           return tryExec(index + 1).then(resolve).catch(reject);
         }
 
-        const streamUrl = stdout.trim().split('\n').map(l => l.trim()).find(l => l.startsWith('http'));
+        const streamUrl = stdout.trim().split('\n').map((l) => l.trim()).find((l) => l.startsWith('http'));
         if (!streamUrl) {
           return tryExec(index + 1).then(resolve).catch(reject);
         }
@@ -57,10 +58,10 @@ function resolveYouTubeViaCli(videoId: string): Promise<string> {
 }
 
 /**
- * High-speed native audio stream extractor using YouTube Innertube Android Client API over HTTP/1.1.
+ * High-speed native audio stream extractor using YouTube Innertube VisionOS Client API over HTTP/1.1.
+ * VisionOS client requires zero JS deciphering, zero PO tokens, and returns direct unthrottled GoogleVideo audio streams.
  * Using HTTP/1.1 prevents Node.js undici ERR_HTTP2_SESSION_ERROR: Session closed with error code 11 (GOAWAY).
- * 100% pure HTTPS fetch — zero dependency on Python, yt-dlp binaries, or third-party scrapers.
- * Completely immune to Vercel/cloud serverless runtime limitations.
+ * 100% pure HTTPS fetch — zero dependency on Python or external binaries.
  */
 async function resolveYouTubeAudioStream(videoId: string): Promise<{ url: string; mimeType: string }> {
   if (urlCache.has(videoId)) {
@@ -71,72 +72,154 @@ async function resolveYouTubeAudioStream(videoId: string): Promise<{ url: string
     urlCache.delete(videoId);
   }
 
-  // Strategy 1: Official YouTube Innertube Android Client over HTTP/1.1 (Returns direct GoogleVideo stream URLs)
-  let debugInfo: any = {};
+  const visitorData = await getVisitorData();
+
+  // Strategy 1: YouTube Innertube VisionOS Client over HTTP/1.1
   try {
-    const innertubeBody = JSON.stringify({
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'User-Agent':
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15',
+      'X-YouTube-Client-Name': '101',
+      'X-YouTube-Client-Version': '1.02',
+      Origin: 'https://www.youtube.com',
+    };
+    if (visitorData) {
+      headers['X-Goog-Visitor-Id'] = visitorData;
+    }
+
+    const payload = {
       context: {
         client: {
-          clientName: 'ANDROID',
-          clientVersion: '20.10.38',
-          androidSdkVersion: 34,
-          osName: 'Android',
-          osVersion: '14',
+          clientName: 'VISIONOS',
+          clientVersion: '1.02',
+          deviceMake: 'Apple',
+          deviceModel: 'RealityDevice17,1',
+          userAgent:
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15',
+          osName: 'visionOS',
+          osVersion: '26.5.23O471',
           hl: 'en',
-          gl: 'US',
+          timeZone: 'UTC',
+          utcOffsetMinutes: 0,
+          visitorData: visitorData || undefined,
         },
       },
       videoId,
+      playbackContext: {
+        contentPlaybackContext: {
+          html5Preference: 'HTML5_PREF_WANTS',
+          signatureTimestamp: 20760,
+        },
+      },
+      contentCheckOk: true,
+      racyCheckOk: true,
+    };
+
+    const res = await requestHttp1('https://www.youtube.com/youtubei/v1/player?prettyPrint=false', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload),
     });
 
-    const res = await requestHttp1(
-      'https://www.youtube.com/youtubei/v1/player?key=AIzaSyA8eiZmM1FaDVjRy-df2KTyQ_vz_yYM39w',
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'User-Agent': 'com.google.android.youtube/20.10.38 (Linux; U; Android 14) gzip',
-        },
-        body: innertubeBody,
-      }
-    );
-
-    debugInfo.playerStatus = res.status;
     if (res.status === 200) {
       const data = await res.json();
-      debugInfo.playabilityStatus = data.playabilityStatus;
-      debugInfo.hasStreamingData = !!data.streamingData;
-      debugInfo.adaptiveFormatsCount = (data.streamingData?.adaptiveFormats || []).length;
       if (data.playabilityStatus?.status === 'OK') {
         const formats = (data.streamingData?.adaptiveFormats || []).filter(
           (f: any) => f.mimeType?.includes('audio') && f.url
         );
 
         if (formats.length > 0) {
-          // Sort by bitrate descending, prefer audio/mp4 (m4a) for universal cross-device support
-          const mp4Audio = formats.find((f: any) => f.mimeType?.includes('audio/mp4'));
-          const best = mp4Audio || formats.sort((a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0))[0];
+          // Prefer itag 140 (audio/mp4 AAC 128kbps) for universal cross-platform support
+          const target = formats.find((f: any) => f.itag === 140) ||
+            formats.find((f: any) => f.mimeType?.includes('audio/mp4')) ||
+            formats[0];
 
-          if (best?.url) {
-            const mime = best.mimeType.split(';')[0].trim() || 'audio/mp4';
+          if (target?.url) {
+            const mime = target.mimeType.split(';')[0].trim() || 'audio/mp4';
             urlCache.set(videoId, {
-              url: best.url,
+              url: target.url,
               mimeType: mime,
               expires: Date.now() + 4 * 60 * 60 * 1000,
             });
-            return { url: best.url, mimeType: mime };
+            return { url: target.url, mimeType: mime };
           }
         }
       }
-    } else {
-      debugInfo.playerBody = await res.text();
     }
   } catch (err: any) {
-    debugInfo.fetchError = err?.message;
-    console.warn(`Innertube player extraction error for ${videoId}:`, err?.message);
+    console.warn(`VisionOS player extraction error for ${videoId}:`, err?.message);
   }
 
-  // Strategy 2: CLI yt-dlp fallback (for local development or environments with yt-dlp installed)
+  // Strategy 2: TVHTML5 Client fallback
+  try {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'User-Agent':
+        'Mozilla/5.0 (SMART-TV; Linux; Tizen 2.4.0) AppleWebKit/538.1 (KHTML, like Gecko) Version/2.4.0 TV Safari/538.1',
+      'X-YouTube-Client-Name': '7',
+      'X-YouTube-Client-Version': '5.20260707',
+      Origin: 'https://www.youtube.com',
+    };
+    if (visitorData) {
+      headers['X-Goog-Visitor-Id'] = visitorData;
+    }
+
+    const payload = {
+      context: {
+        client: {
+          clientName: 'TVHTML5',
+          clientVersion: '5.20260707',
+          deviceMake: 'Samsung',
+          deviceModel: 'UKS9800',
+          userAgent:
+            'Mozilla/5.0 (SMART-TV; Linux; Tizen 2.4.0) AppleWebKit/538.1 (KHTML, like Gecko) Version/2.4.0 TV Safari/538.1',
+          osName: 'Tizen',
+          osVersion: '2.4.0',
+          hl: 'en',
+          visitorData: visitorData || undefined,
+        },
+      },
+      videoId,
+      contentCheckOk: true,
+      racyCheckOk: true,
+    };
+
+    const res = await requestHttp1('https://www.youtube.com/youtubei/v1/player?prettyPrint=false', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload),
+    });
+
+    if (res.status === 200) {
+      const data = await res.json();
+      if (data.playabilityStatus?.status === 'OK') {
+        const formats = (data.streamingData?.adaptiveFormats || []).filter(
+          (f: any) => f.mimeType?.includes('audio') && f.url
+        );
+
+        if (formats.length > 0) {
+          const target = formats.find((f: any) => f.itag === 140) ||
+            formats.find((f: any) => f.mimeType?.includes('audio/mp4')) ||
+            formats[0];
+
+          if (target?.url) {
+            const mime = target.mimeType.split(';')[0].trim() || 'audio/mp4';
+            urlCache.set(videoId, {
+              url: target.url,
+              mimeType: mime,
+              expires: Date.now() + 4 * 60 * 60 * 1000,
+            });
+            return { url: target.url, mimeType: mime };
+          }
+        }
+      }
+    }
+  } catch (err: any) {
+    console.warn(`TVHTML5 player extraction error for ${videoId}:`, err?.message);
+  }
+
+  // Strategy 3: CLI yt-dlp fallback (for local development or environments with yt-dlp)
   try {
     const cliUrl = await resolveYouTubeViaCli(videoId);
     if (cliUrl) {
@@ -149,11 +232,10 @@ async function resolveYouTubeAudioStream(videoId: string): Promise<{ url: string
       return { url: cliUrl, mimeType: mime };
     }
   } catch (cliErr: any) {
-    debugInfo.cliError = cliErr?.message;
     console.warn(`CLI yt-dlp fallback unavailable for ${videoId}:`, cliErr?.message);
   }
 
-  throw new Error(`Unable to resolve authentic YouTube audio stream for ${videoId}: ${JSON.stringify(debugInfo)}`);
+  throw new Error(`Unable to resolve authentic YouTube audio stream for ${videoId}`);
 }
 
 export async function GET(req: NextRequest) {
@@ -171,7 +253,8 @@ export async function GET(req: NextRequest) {
     // Stream through server proxy over HTTP/1.1 with Range support for seamless seeking and background playback
     const clientRange = req.headers.get('range');
     const upstreamHeaders: Record<string, string> = {
-      'User-Agent': 'com.google.android.youtube/20.10.38 (Linux; U; Android 14)',
+      'User-Agent':
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15',
     };
 
     if (clientRange) {
@@ -250,8 +333,9 @@ export async function HEAD(req: NextRequest) {
     const upstreamRes = await requestHttp1(directUrl, {
       method: 'GET',
       headers: {
-        'Range': 'bytes=0-1',
-        'User-Agent': 'com.google.android.youtube/20.10.38 (Linux; U; Android 14)',
+        Range: 'bytes=0-1',
+        'User-Agent':
+          'Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15',
       },
     });
 

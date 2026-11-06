@@ -1,6 +1,7 @@
 import { Track } from '@/types/music';
 import { isMalayalamTrack } from '@/lib/recommendations/sonicGraph';
 import { requestHttp1 } from '@/lib/music/http';
+import { setVisitorData } from '@/lib/music/visitor';
 
 function parseDuration(durationStr?: string): number {
   if (!durationStr) return 210;
@@ -151,6 +152,9 @@ export async function searchYouTube(query: string, limit: number = 20): Promise<
 
     if (innertubeRes.status === 200) {
       const data = await innertubeRes.json();
+      if (data.responseContext?.visitorData) {
+        setVisitorData(data.responseContext.visitorData);
+      }
       const sectionList =
         data.contents?.twoColumnSearchResultsRenderer?.primaryContents?.sectionListRenderer?.contents;
       if (Array.isArray(sectionList)) {
