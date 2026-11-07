@@ -144,6 +144,22 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
   // Screen Wake Lock API reference
   const wakeLockRef = useRef<any>(null);
 
+  // Stable refs for background audio continuity without React render latency
+  const queueRef = useRef<Track[]>([]);
+  const currentTrackRef = useRef<Track | null>(null);
+  const durationRef = useRef<number>(0);
+  const preferencesRef = useRef(preferences);
+  const repeatRef = useRef(repeat);
+  const isReplenishingRef = useRef<boolean>(false);
+
+  useEffect(() => {
+    preferencesRef.current = preferences;
+  }, [preferences]);
+
+  useEffect(() => {
+    repeatRef.current = repeat;
+  }, [repeat]);
+
   // Stable callback refs for MediaSession & YouTube error handlers
   const nextRef = useRef<() => void>(() => {});
   const previousRef = useRef<() => void>(() => {});
@@ -418,65 +434,102 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
     [currentTrack, recordPlaySession]
   );
 
-  // Autoplay / Queue extension logic
-  const handleTrackEnded = useCallback(async () => {
+  // Instant fallback track from curated local seeds
+  const getInstantFallbackTrack = useCallback((track: Track | null): Track | null => {
+    const isMalayalam = track ? isMalayalamTrack(track) : false;
+    const candidates = SEED_TRACKS.filter(t =>
+      isMalayalam ? isMalayalamTrack(t) : !isMalayalamTrack(t) && t.id !== track?.id
+    );
+    if (candidates.length > 0) {
+      const randomIdx = Math.floor(Math.random() * candidates.length);
+      return candidates[randomIdx];
+    }
+    return SEED_TRACKS.find(t => t.id !== track?.id) || SEED_TRACKS[0] || null;
+  }, []);
+
+  // Background queue replenishment: keeps at least 6 tracks in queue at all times
+  const replenishQueueIfNeeded = useCallback(async (baseTrack?: Track | null) => {
+    const targetTrack = baseTrack || currentTrackRef.current;
+    if (!targetTrack || isReplenishingRef.current) return;
+    if (queueRef.current.length >= 6) return;
+
+    isReplenishingRef.current = true;
+    try {
+      const currentIds = [targetTrack.id, ...queueRef.current.map(t => t.id)];
+      const fresh = await fetchTailoredRecommendations(targetTrack, preferencesRef.current, 10, currentIds);
+      if (fresh && fresh.length > 0) {
+        setQueue(prev => {
+          const existing = new Set(prev.map(t => t.id));
+          existing.add(targetTrack.id);
+          const newTracks = fresh.filter(t => !existing.has(t.id));
+          const updated = [...prev, ...newTracks];
+          queueRef.current = updated;
+          return updated;
+        });
+      }
+    } catch (err) {
+      console.warn('Queue replenishment error:', err);
+    } finally {
+      isReplenishingRef.current = false;
+    }
+  }, []);
+
+  // Autoplay / Queue auto-advance logic: 100% synchronous track transition
+  const handleTrackEnded = useCallback(() => {
     finalizeCurrentPlaySession(true);
 
-    if (repeat === 'one') {
+    if (repeatRef.current === 'one') {
       seekRef.current(0);
       resumeRef.current();
       return;
     }
 
-    if (queue.length > 0) {
-      const nextTrack = queue[0];
-      const remainingQueue = queue.slice(1);
-      if (currentTrack) {
-        setHistory(prev => [currentTrack, ...prev].slice(0, 30));
-      }
+    const currentQ = queueRef.current;
+    if (currentQ.length > 0) {
+      const nextTrack = currentQ[0];
+      const remainingQueue = currentQ.slice(1);
+      queueRef.current = remainingQueue;
       setQueue(remainingQueue);
+
+      if (currentTrackRef.current) {
+        setHistory(prev => [currentTrackRef.current!, ...prev].slice(0, 30));
+      }
+
+      // Start next track IMMEDIATELY in the same tick so Android AudioFocus is retained!
       playTrackRef.current(nextTrack, remainingQueue);
+      replenishQueueIfNeeded(nextTrack);
       return;
     }
 
-    // Queue is empty, check taste-based Autoplay
-    if (preferences.autoplayEnabled && currentTrack) {
-      try {
-        setIsLoading(true);
-        const recommendations = await fetchTailoredRecommendations(currentTrack, preferences, 6);
-        const nextChoice = recommendations[0];
-
-        if (nextChoice) {
-          if (currentTrack) {
-            setHistory(prev => [currentTrack, ...prev].slice(0, 30));
-          }
-          playTrackRef.current(nextChoice);
-          return;
-        }
-      } catch (err) {
-        console.warn('Autoplay recommendation failed:', err);
-      } finally {
-        setIsLoading(false);
-      }
-    }
-
     // If repeat all is on and we have history
-    if (repeat === 'all' && history.length > 0) {
+    if (repeatRef.current === 'all' && history.length > 0) {
       const restarted = history[history.length - 1];
       playTrackRef.current(restarted);
       return;
     }
 
-    setIsPlaying(false);
-  }, [repeat, queue, currentTrack, preferences, history, finalizeCurrentPlaySession]);
+    // Queue is empty: grab instant fallback track immediately!
+    const fallback = getInstantFallbackTrack(currentTrackRef.current);
+    if (fallback) {
+      playTrackRef.current(fallback);
+      replenishQueueIfNeeded(fallback);
+      return;
+    }
 
-  // Hook HTML5 Audio onended
+    setIsPlaying(false);
+  }, [finalizeCurrentPlaySession, history, replenishQueueIfNeeded, getInstantFallbackTrack]);
+
+  // Hook HTML5 Audio onended & ended event listener
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
-    audio.onended = () => {
-      // Triggered when native stream or audio ends
+    const onEndedListener = () => {
       handleTrackEnded();
+    };
+    audio.onended = onEndedListener;
+    audio.addEventListener('ended', onEndedListener);
+    return () => {
+      audio.removeEventListener('ended', onEndedListener);
     };
   }, [handleTrackEnded]);
 
@@ -738,120 +791,152 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
     return () => clearInterval(interval);
   }, [isPlaying, currentTrack]);
 
-  // Sync MediaSession API for Android System UI, Lock Screen, and Bluetooth
+  // Register MediaSession action handlers once on mount so Android routes media keys to Tavilo immediately
   useEffect(() => {
-    if ('mediaSession' in navigator && currentTrack) {
-      navigator.mediaSession.metadata = new MediaMetadata({
-        title: currentTrack.title,
-        artist: currentTrack.artist,
-        album: currentTrack.album,
-        artwork: [
-          { src: currentTrack.artwork, sizes: '96x96', type: 'image/jpeg' },
-          { src: currentTrack.artwork, sizes: '128x128', type: 'image/jpeg' },
-          { src: currentTrack.artwork, sizes: '192x192', type: 'image/jpeg' },
-          { src: currentTrack.artwork, sizes: '256x256', type: 'image/jpeg' },
-          { src: currentTrack.artwork, sizes: '384x384', type: 'image/jpeg' },
-          { src: currentTrack.artwork, sizes: '512x512', type: 'image/jpeg' },
-        ],
-      });
+    if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) return;
 
-      navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
+    const safeSetHandler = (action: MediaSessionAction, handler: MediaSessionActionHandler | null) => {
+      try {
+        navigator.mediaSession.setActionHandler(action, handler);
+      } catch (e) {
+        console.warn(`MediaSession action ${action} not supported:`, e);
+      }
+    };
 
-      navigator.mediaSession.setActionHandler('play', () => {
-        isUserPausedRef.current = false;
-        resumeRef.current();
-      });
-      navigator.mediaSession.setActionHandler('pause', () => {
-        isUserPausedRef.current = true;
-        pauseRef.current();
-      });
-      navigator.mediaSession.setActionHandler('previoustrack', () => previousRef.current());
-      navigator.mediaSession.setActionHandler('nexttrack', () => nextRef.current());
-      navigator.mediaSession.setActionHandler('seekto', details => {
-        if (details.seekTime !== undefined) {
-          seekRef.current(details.seekTime);
-        }
-      });
-      navigator.mediaSession.setActionHandler('seekforward', details => {
-        const offset = details.seekOffset || 10;
-        seekRef.current(Math.min(duration, currentTimeRef.current + offset));
-      });
-      navigator.mediaSession.setActionHandler('seekbackward', details => {
-        const offset = details.seekOffset || 10;
-        seekRef.current(Math.max(0, currentTimeRef.current - offset));
-      });
-      navigator.mediaSession.setActionHandler('stop', () => {
-        isUserPausedRef.current = true;
-        pauseRef.current();
-      });
+    safeSetHandler('play', () => {
+      isUserPausedRef.current = false;
+      resumeRef.current();
+    });
+    safeSetHandler('pause', () => {
+      isUserPausedRef.current = true;
+      pauseRef.current();
+    });
+    safeSetHandler('nexttrack', () => {
+      nextRef.current();
+    });
+    safeSetHandler('previoustrack', () => {
+      previousRef.current();
+    });
+    safeSetHandler('stop', () => {
+      isUserPausedRef.current = true;
+      pauseRef.current();
+    });
+    safeSetHandler('seekto', (details) => {
+      if (details.seekTime !== undefined) {
+        seekRef.current(details.seekTime);
+      }
+    });
+    safeSetHandler('seekforward', (details) => {
+      const offset = details.seekOffset || 10;
+      seekRef.current(Math.min(durationRef.current, currentTimeRef.current + offset));
+    });
+    safeSetHandler('seekbackward', (details) => {
+      const offset = details.seekOffset || 10;
+      seekRef.current(Math.max(0, currentTimeRef.current - offset));
+    });
+  }, []);
+
+  // Sync MediaSession metadata and playbackState for Android System UI, Lock Screen, and Bluetooth
+  useEffect(() => {
+    if (typeof navigator === 'undefined' || !('mediaSession' in navigator) || !currentTrack) return;
+
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: currentTrack.title,
+      artist: currentTrack.artist,
+      album: currentTrack.album,
+      artwork: [
+        { src: currentTrack.artwork, sizes: '96x96', type: 'image/jpeg' },
+        { src: currentTrack.artwork, sizes: '128x128', type: 'image/jpeg' },
+        { src: currentTrack.artwork, sizes: '192x192', type: 'image/jpeg' },
+        { src: currentTrack.artwork, sizes: '256x256', type: 'image/jpeg' },
+        { src: currentTrack.artwork, sizes: '384x384', type: 'image/jpeg' },
+        { src: currentTrack.artwork, sizes: '512x512', type: 'image/jpeg' },
+      ],
+    });
+
+    navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
+
+    if ('setPositionState' in navigator.mediaSession && duration > 0) {
+      try {
+        navigator.mediaSession.setPositionState({
+          duration: Math.max(0, duration),
+          playbackRate: 1,
+          position: Math.min(duration, Math.max(0, currentTime)),
+        });
+      } catch {}
     }
-  }, [currentTrack, duration, isPlaying]);
+  }, [currentTrack, isPlaying, duration, currentTime]);
 
   const playTrack = useCallback(
     (track: Track, customQueue?: Track[], options?: PlayOptions) => {
       const currentRequestId = ++playRequestIdRef.current;
       finalizeCurrentPlaySession(false);
       setError(null);
+      currentTrackRef.current = track;
       setCurrentTrack(track);
       setCurrentTime(0);
+      currentTimeRef.current = 0;
       setDuration(track.duration || 0);
+      durationRef.current = track.duration || 0;
       setIsLoading(true);
       isNativeAudioStreamRef.current = false;
+      isUserPausedRef.current = false;
+      enableWebAudioKeepAlive();
 
-      // Stop previous audio and prime element with silence in user gesture context (prevents old song bleeding)
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current.src = SILENT_AUDIO_URI;
-        audioRef.current.play().catch(() => {});
-      }
-      if (ytPlayerRef.current && isYtReadyRef.current) {
-        try {
-          ytPlayerRef.current.pauseVideo();
-        } catch {}
-      }
-
-      if (customQueue && !options?.isSearchPlay) {
-        // Find index of clicked track to set up upcoming queue and history correctly
+      // Configure upcoming queue:
+      if (customQueue && customQueue.length > 0) {
         const trackIndex = customQueue.findIndex((t) => t.id === track.id);
+        let upcoming: Track[] = [];
         if (trackIndex !== -1) {
-          const upcoming = customQueue.slice(trackIndex + 1);
-          setQueue(upcoming);
+          upcoming = customQueue.slice(trackIndex + 1);
           const preceding = customQueue.slice(0, trackIndex);
           if (preceding.length > 0) {
             setHistory((prev) => [...preceding.reverse(), ...prev].slice(0, 30));
           }
         } else {
-          setQueue(customQueue);
+          upcoming = customQueue.filter((t) => t.id !== track.id);
         }
+        queueRef.current = upcoming;
+        setQueue(upcoming);
       } else {
-        // Search play or standalone track play:
-        // Clear any keyword search queue immediately so the Next button plays taste recommendations
-        setQueue([]);
-
-        // Asynchronously generate tailored taste queue based on user preferences and this song
-        (async () => {
-          try {
-            const tasteQueue = await fetchTailoredRecommendations(track, preferences, 12, [track.id]);
-            if (playRequestIdRef.current === currentRequestId) {
-              setQueue(tasteQueue);
-            }
-          } catch (err) {
-            console.warn('Failed to populate taste queue:', err);
-          }
-        })();
+        // If no custom queue provided, keep existing queue or seed with instant recommendations
+        if (queueRef.current.length === 0) {
+          const instantFallback = RecommendationEngine.generateRecommendationQueue(
+            SEED_TRACKS,
+            preferencesRef.current,
+            track,
+            8
+          );
+          queueRef.current = instantFallback;
+          setQueue(instantFallback);
+        }
       }
 
-      // Check whether track is a YouTube video or an audio stream
+      // Proactively replenish queue in background
+      replenishQueueIfNeeded(track);
+
+      // Immediately update MediaSession metadata for Android lock screen & Bluetooth
+      if (typeof navigator !== 'undefined' && 'mediaSession' in navigator) {
+        navigator.mediaSession.metadata = new MediaMetadata({
+          title: track.title,
+          artist: track.artist,
+          album: track.album,
+          artwork: [
+            { src: track.artwork, sizes: '96x96', type: 'image/jpeg' },
+            { src: track.artwork, sizes: '128x128', type: 'image/jpeg' },
+            { src: track.artwork, sizes: '192x192', type: 'image/jpeg' },
+            { src: track.artwork, sizes: '256x256', type: 'image/jpeg' },
+            { src: track.artwork, sizes: '384x384', type: 'image/jpeg' },
+            { src: track.artwork, sizes: '512x512', type: 'image/jpeg' },
+          ],
+        });
+        navigator.mediaSession.playbackState = 'playing';
+      }
+
+      // Play Audio:
       if (track.providerId === 'youtube') {
-        isUserPausedRef.current = false;
-        enableWebAudioKeepAlive();
-
         const videoId = track.streamUrl.replace('yt-', '');
-
         (async () => {
-          // Native HTML5 Audio Streaming via /api/stream
-          // Plays the 100% genuine original copy directly from YouTube as native audio.
-          // Native HTML5 audio works 100% in background, on minimize, and with screen locked!
           try {
             if (audioRef.current) {
               if (isYtReadyRef.current && ytPlayerRef.current) {
@@ -859,7 +944,6 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
                   ytPlayerRef.current.pauseVideo();
                 } catch {}
               }
-
               const nativeStreamUrl = `/api/stream?id=${encodeURIComponent(videoId)}&title=${encodeURIComponent(track.title)}&artist=${encodeURIComponent(track.artist)}`;
               isNativeAudioStreamRef.current = true;
               audioRef.current.loop = false;
@@ -871,29 +955,11 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
               setIsPlaying(true);
               setIsLoading(false);
               requestWakeLock();
-
-              if ('mediaSession' in navigator) {
-                navigator.mediaSession.metadata = new MediaMetadata({
-                  title: track.title,
-                  artist: track.artist,
-                  album: track.album,
-                  artwork: [
-                    { src: track.artwork, sizes: '512x512', type: 'image/jpeg' },
-                  ],
-                });
-                navigator.mediaSession.playbackState = 'playing';
-              }
               return;
             }
           } catch (err) {
             console.warn('Native HTML5 /api/stream playback error, falling back to YouTube player:', err);
             isNativeAudioStreamRef.current = false;
-            if (audioRef.current) {
-              audioRef.current.pause();
-              audioRef.current.src = SILENT_AUDIO_URI;
-              audioRef.current.loop = true;
-              audioRef.current.play().catch(() => {});
-            }
             if (isYtReadyRef.current && ytPlayerRef.current) {
               try {
                 ytPlayerRef.current.loadVideoById(videoId);
@@ -902,30 +968,18 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
                 setIsPlaying(true);
                 setIsLoading(false);
                 return;
-              } catch (ytErr) {
-                console.warn('YouTube fallback failed:', ytErr);
-              }
-            } else {
-              pendingYtVideoIdRef.current = videoId;
-              if (playRequestIdRef.current !== currentRequestId) return;
-              setIsPlaying(true);
-              setIsLoading(false);
-              return;
+              } catch {}
             }
           }
         })();
       } else {
-        isUserPausedRef.current = false;
-        enableWebAudioKeepAlive();
-
-        // Stop YouTube player if playing
-        if (isYtReadyRef.current && ytPlayerRef.current) {
+        // Direct audio stream (JioSaavn 320kbps MP4)
+        if (ytPlayerRef.current && isYtReadyRef.current) {
           try {
             ytPlayerRef.current.pauseVideo();
           } catch {}
         }
 
-        // Play HTML5 audio directly
         if (audioRef.current) {
           isNativeAudioStreamRef.current = true;
           audioRef.current.loop = false;
@@ -939,7 +993,7 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
               setIsLoading(false);
               requestWakeLock();
             })
-            .catch(err => {
+            .catch((err) => {
               console.warn('Playback initiation prevented or failed:', err);
               if (playRequestIdRef.current === currentRequestId) {
                 setIsLoading(false);
@@ -949,7 +1003,7 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
         }
       }
     },
-    [finalizeCurrentPlaySession, preferences, requestWakeLock, volume, enableWebAudioKeepAlive]
+    [finalizeCurrentPlaySession, requestWakeLock, volume, enableWebAudioKeepAlive, replenishQueueIfNeeded]
   );
 
   const togglePlay = () => {
@@ -1053,43 +1107,43 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const next = async () => {
-    if (queue.length > 0) {
-      const nextTrack = queue[0];
-      const remainingQueue = queue.slice(1);
-      if (currentTrack) {
-        setHistory(prev => [currentTrack, ...prev].slice(0, 30));
-      }
-      playTrack(nextTrack, remainingQueue);
+  const next = useCallback(() => {
+    if (repeatRef.current === 'one') {
+      seekRef.current(0);
+      resumeRef.current();
       return;
     }
 
-    // Queue is empty: dynamically pick next track according to user's music taste
-    if (currentTrack) {
-      try {
-        setIsLoading(true);
-        const recommendations = await fetchTailoredRecommendations(currentTrack, preferences, 6);
-        const nextChoice = recommendations[0];
-        if (nextChoice) {
-          if (currentTrack) {
-            setHistory(prev => [currentTrack, ...prev].slice(0, 30));
-          }
-          playTrack(nextChoice);
-          return;
-        }
-      } catch (err) {
-        console.warn('Taste next track failed:', err);
-      } finally {
-        setIsLoading(false);
+    const currentQ = queueRef.current;
+    if (currentQ.length > 0) {
+      const nextTrack = currentQ[0];
+      const remainingQueue = currentQ.slice(1);
+      queueRef.current = remainingQueue;
+      setQueue(remainingQueue);
+
+      if (currentTrackRef.current) {
+        setHistory((prev) => [currentTrackRef.current!, ...prev].slice(0, 30));
       }
+
+      // Play next track immediately so Android MediaSession gets synchronous acknowledgment!
+      playTrackRef.current(nextTrack, remainingQueue);
+      replenishQueueIfNeeded(nextTrack);
+      return;
     }
 
-    pause();
-  };
+    const fallback = getInstantFallbackTrack(currentTrackRef.current);
+    if (fallback) {
+      playTrackRef.current(fallback);
+      replenishQueueIfNeeded(fallback);
+      return;
+    }
 
-  const previous = () => {
-    if (currentTime > 3) {
-      seek(0);
+    pauseRef.current();
+  }, [replenishQueueIfNeeded, getInstantFallbackTrack]);
+
+  const previous = useCallback(() => {
+    if (currentTimeRef.current > 3) {
+      seekRef.current(0);
       return;
     }
 
@@ -1097,14 +1151,16 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
       const prevTrack = history[0];
       const remainingHistory = history.slice(1);
       setHistory(remainingHistory);
-      if (currentTrack) {
-        setQueue(prev => [currentTrack, ...prev]);
+      if (currentTrackRef.current) {
+        const updatedQueue = [currentTrackRef.current, ...queueRef.current];
+        queueRef.current = updatedQueue;
+        setQueue(updatedQueue);
       }
-      playTrack(prevTrack);
+      playTrackRef.current(prevTrack);
     } else {
-      seek(0);
+      seekRef.current(0);
     }
-  };
+  }, [history]);
 
   pauseRef.current = pause;
   resumeRef.current = resume;
@@ -1150,10 +1206,11 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
   };
 
   const toggleShuffle = () => {
-    setShuffle(prev => {
+    setShuffle((prev) => {
       const nextVal = !prev;
-      if (nextVal && queue.length > 1) {
-        const shuffled = [...queue].sort(() => Math.random() - 0.5);
+      if (nextVal && queueRef.current.length > 1) {
+        const shuffled = [...queueRef.current].sort(() => Math.random() - 0.5);
+        queueRef.current = shuffled;
         setQueue(shuffled);
       }
       return nextVal;
@@ -1161,7 +1218,7 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
   };
 
   const toggleRepeat = () => {
-    setRepeat(prev => {
+    setRepeat((prev) => {
       if (prev === 'off') return 'all';
       if (prev === 'all') return 'one';
       return 'off';
@@ -1169,18 +1226,31 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
   };
 
   const addToQueue = (track: Track) => {
-    setQueue(prev => [...prev, track]);
+    setQueue((prev) => {
+      const updated = [...prev, track];
+      queueRef.current = updated;
+      return updated;
+    });
   };
 
   const playNext = (track: Track) => {
-    setQueue(prev => [track, ...prev]);
+    setQueue((prev) => {
+      const updated = [track, ...prev];
+      queueRef.current = updated;
+      return updated;
+    });
   };
 
   const removeFromQueue = (index: number) => {
-    setQueue(prev => prev.filter((_, i) => i !== index));
+    setQueue((prev) => {
+      const updated = prev.filter((_, i) => i !== index);
+      queueRef.current = updated;
+      return updated;
+    });
   };
 
   const clearQueue = () => {
+    queueRef.current = [];
     setQueue([]);
   };
 

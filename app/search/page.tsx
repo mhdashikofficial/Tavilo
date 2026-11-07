@@ -195,7 +195,7 @@ export default function SearchPage() {
                         Top Result
                       </p>
                       <div
-                        onClick={() => playTrack(topTrack, undefined, { isSearchPlay: true })}
+                        onClick={() => playTrack(topTrack, results.tracks)}
                         className="group relative p-6 rounded-2xl bg-gradient-to-br from-tavilo-card to-[#181d28] border border-tavilo-border/80 hover:border-tavilo-green/40 transition-all cursor-pointer shadow-xl"
                       >
                         <div className="relative w-24 h-24 rounded-2xl overflow-hidden mb-4 bg-black/40 shadow-lg">
@@ -236,6 +236,7 @@ export default function SearchPage() {
                           key={track.id}
                           track={track}
                           index={idx}
+                          playlistContext={results.tracks}
                           isSearchResult={true}
                         />
                       ))}

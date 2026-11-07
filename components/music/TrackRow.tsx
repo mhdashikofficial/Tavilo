@@ -29,11 +29,7 @@ export function TrackRow({ track, index, playlistContext, isSearchResult }: Trac
     if (isCurrent) {
       togglePlay();
     } else {
-      if (isSearchResult) {
-        playTrack(track, undefined, { isSearchPlay: true });
-      } else {
-        playTrack(track, playlistContext);
-      }
+      playTrack(track, playlistContext);
     }
   };
 
